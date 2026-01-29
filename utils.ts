@@ -1308,7 +1308,7 @@ const cleanAndParseJSON = (text: string): { products: any[]; comparison: any } =
 interface ExtractedProduct {
   asin: string;
   name: string;
-  source: 'link' | 'heading' | 'list' | 'text';
+  source: 'amazon_link' | 'amazon_anchor' | 'schema' | 'review_box' | 'brand_model' | 'link' | 'heading' | 'list' | 'text';
   confidence: number;
 }
 
@@ -1317,79 +1317,153 @@ const preExtractAmazonProducts = (html: string): ExtractedProduct[] => {
   const seenAsins = new Set<string>();
   const seenNames = new Set<string>();
 
-  // STRATEGY 1: Extract ASINs from Amazon URLs (highest confidence)
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STRATEGY 1: Extract ASINs from Amazon URLs (HIGHEST CONFIDENCE - 100% accurate)
+  // These are GUARANTEED to be real products mentioned in the post
+  // ═══════════════════════════════════════════════════════════════════════════
   const asinPatterns = [
     /amazon\.com\/(?:dp|gp\/product|exec\/obidos\/ASIN)\/([A-Z0-9]{10})/gi,
     /amazon\.com\/[^"'\s]*\/dp\/([A-Z0-9]{10})/gi,
     /amazon\.com\/[^"'\s]*?(?:\/|%2F)([A-Z0-9]{10})(?:[/?&"'\s]|$)/gi,
-    /amzn\.to\/([A-Za-z0-9]+)/gi,
     /data-asin=["']([A-Z0-9]{10})["']/gi,
-    /asin["':\s]+["']?([A-Z0-9]{10})["']?/gi,
+    /asin["':\s]*=?\s*["']?([A-Z0-9]{10})["']?/gi,
+    /tag=[\w\-]+&.*?(?:asin|ASIN)=([A-Z0-9]{10})/gi,
   ];
 
   for (const pattern of asinPatterns) {
     let match;
     while ((match = pattern.exec(html)) !== null) {
-      const asin = match[1].toUpperCase();
-      if (asin.length === 10 && /^[A-Z0-9]+$/.test(asin) && !seenAsins.has(asin)) {
+      const asin = match[1]?.toUpperCase();
+      if (asin && asin.length === 10 && /^[A-Z0-9]+$/.test(asin) && !seenAsins.has(asin)) {
         seenAsins.add(asin);
-        products.push({ asin, name: '', source: 'link', confidence: 1.0 });
+        products.push({ asin, name: '', source: 'amazon_link', confidence: 1.0 });
       }
     }
   }
+  
+  // Handle amzn.to short links separately (mark as needing resolution)
+  const shortLinkPattern = /amzn\.to\/([a-zA-Z0-9]+)/gi;
+  let shortMatch;
+  while ((shortMatch = shortLinkPattern.exec(html)) !== null) {
+    const shortCode = shortMatch[1];
+    if (shortCode && !seenAsins.has(`SHORT_${shortCode}`)) {
+      seenAsins.add(`SHORT_${shortCode}`);
+      // Add as placeholder - will be resolved via Amazon API later
+      products.push({ asin: '', name: `amzn.to/${shortCode}`, source: 'amazon_link', confidence: 0.98 });
+    }
+  }
 
-  // STRATEGY 2: Extract product names from Amazon link text
-  const linkTextPattern = /<a[^>]*amazon\.com[^>]*>([^<]{10,100})<\/a>/gi;
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STRATEGY 2: Extract product names from Amazon link anchor text
+  // Link text is usually the product name - very high confidence
+  // ═══════════════════════════════════════════════════════════════════════════
+  const amazonLinkPattern = /<a[^>]*href=["'][^"']*(?:amazon\.com|amzn\.to)[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
   let linkMatch;
-  while ((linkMatch = linkTextPattern.exec(html)) !== null) {
-    const name = linkMatch[1].trim().replace(/\s+/g, ' ');
-    if (name.length > 10 && !seenNames.has(name.toLowerCase())) {
-      seenNames.add(name.toLowerCase());
-      products.push({ asin: '', name, source: 'link', confidence: 0.9 });
+  while ((linkMatch = amazonLinkPattern.exec(html)) !== null) {
+    // Strip HTML tags from anchor content
+    const rawText = linkMatch[1].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    
+    // Filter out generic text like "Check Price", "Buy Now", "Amazon", "Click Here"
+    const genericPhrases = /^(check|buy|view|see|get|click|amazon|price|here|now|shop|order|purchase|\$[\d.]+)/i;
+    
+    if (rawText.length >= 10 && rawText.length <= 150 && !genericPhrases.test(rawText) && !seenNames.has(rawText.toLowerCase())) {
+      seenNames.add(rawText.toLowerCase());
+      products.push({ asin: '', name: rawText, source: 'amazon_anchor', confidence: 0.95 });
     }
   }
 
-  // STRATEGY 3: Extract from headings with product indicators
-  const headingPattern = /<h[1-4][^>]*>([^<]*(?:Best|Top|Review|Pick|Choice|Recommended|Editor|Winner|#\d)[^<]*)<\/h[1-4]>/gi;
-  let headingMatch;
-  while ((headingMatch = headingPattern.exec(html)) !== null) {
-    const text = headingMatch[1].replace(/<[^>]*>/g, '').trim();
-    if (text.length > 5 && text.length < 150 && !seenNames.has(text.toLowerCase())) {
-      seenNames.add(text.toLowerCase());
-      products.push({ asin: '', name: text, source: 'heading', confidence: 0.7 });
-    }
-  }
-
-  // STRATEGY 4: Extract from numbered/bulleted lists
-  const listPattern = /<li[^>]*>(?:<[^>]*>)*([^<]*(?:[A-Z][a-z]+\s+[A-Z][a-z]+)[^<]{5,80})(?:<[^>]*>)*<\/li>/gi;
-  let listMatch;
-  while ((listMatch = listPattern.exec(html)) !== null) {
-    const text = listMatch[1].replace(/<[^>]*>/g, '').trim();
-    if (text.length > 10 && text.length < 100 && !seenNames.has(text.toLowerCase())) {
-      const hasProductIndicator = /\b(pro|plus|max|ultra|mini|lite|series|gen|edition|version|\d{3,4}[a-z]*)\b/i.test(text);
-      if (hasProductIndicator) {
-        seenNames.add(text.toLowerCase());
-        products.push({ asin: '', name: text, source: 'list', confidence: 0.6 });
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STRATEGY 3: Extract from structured data (JSON-LD, Schema.org)
+  // Websites often include product schema - extremely reliable
+  // ═══════════════════════════════════════════════════════════════════════════
+  const schemaPatterns = [
+    /"@type"\s*:\s*"Product"[^}]*"name"\s*:\s*"([^"]+)"/gi,
+    /"name"\s*:\s*"([^"]+)"[^}]*"@type"\s*:\s*"Product"/gi,
+    /itemprop=["']name["'][^>]*>([^<]{5,100})</gi,
+  ];
+  
+  for (const pattern of schemaPatterns) {
+    let match;
+    while ((match = pattern.exec(html)) !== null) {
+      const name = match[1].trim().replace(/\\"/g, '"');
+      if (name.length >= 5 && name.length <= 120 && !seenNames.has(name.toLowerCase())) {
+        seenNames.add(name.toLowerCase());
+        products.push({ asin: '', name, source: 'schema', confidence: 0.92 });
       }
     }
   }
 
-  // STRATEGY 5: Extract brand + model patterns from text
-  const brandModelPattern = /\b(Apple|Samsung|Sony|LG|Bose|JBL|Anker|Logitech|Razer|Corsair|HyperX|SteelSeries|Ninja|Instant Pot|KitchenAid|Cuisinart|Dyson|iRobot|Roomba|Shark|Vitamix|Breville|De'?Longhi|Keurig|Nespresso|GoPro|Canon|Nikon|Fujifilm|DJI|Ring|Nest|Arlo|Philips|Oral-B|Waterpik|Fitbit|Garmin|Whoop|Oura|Theragun|Hyperice|NordicTrack|Peloton|Bowflex|RENPHO|Wyze|TP-Link|Netgear|Asus|Dell|HP|Lenovo|Microsoft|Google|Amazon|Echo|Kindle|Fire)\s+([A-Z]?[a-z]*\s*[\w\-]+(?:\s+[\w\-]+)?)/gi;
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STRATEGY 4: Extract from product review boxes/widgets
+  // These usually have specific class names or data attributes
+  // ═══════════════════════════════════════════════════════════════════════════
+  const reviewBoxPatterns = [
+    /class=["'][^"']*(?:product|review|affiliate)[^"']*["'][^>]*>[\s\S]*?<(?:h[1-4]|strong|b)[^>]*>([^<]{5,100})<\//gi,
+    /data-product[^>]*>([^<]{5,100})</gi,
+    /class=["'][^"']*product-?title[^"']*["'][^>]*>([^<]{5,100})</gi,
+  ];
+  
+  for (const pattern of reviewBoxPatterns) {
+    let match;
+    while ((match = pattern.exec(html)) !== null) {
+      const name = match[1].replace(/<[^>]*>/g, '').trim();
+      if (name.length >= 5 && name.length <= 120 && !seenNames.has(name.toLowerCase())) {
+        seenNames.add(name.toLowerCase());
+        products.push({ asin: '', name, source: 'review_box', confidence: 0.88 });
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STRATEGY 5: Extract SPECIFIC brand+model combinations
+  // Only high-confidence patterns with model numbers or series names
+  // ═══════════════════════════════════════════════════════════════════════════
+  const strictBrandModelPattern = /\b(Apple|Samsung|Sony|LG|Bose|JBL|Anker|Logitech|Razer|Corsair|HyperX|SteelSeries|Ninja|Instant\s?Pot|KitchenAid|Cuisinart|Dyson|iRobot|Roomba|Shark|Vitamix|Breville|De'?Longhi|Keurig|Nespresso|GoPro|Canon|Nikon|Fujifilm|DJI|Ring|Nest|Arlo|Philips|Oral-B|Waterpik|Fitbit|Garmin|Whoop|Oura|Theragun|Hyperice|NordicTrack|Peloton|Bowflex|RENPHO|Wyze|TP-Link|Netgear|Asus|Dell|HP|Lenovo|Microsoft|Surface|Google|Amazon|Echo|Kindle|Fire|AirPods?|MacBook|iPhone|iPad|Galaxy|Pixel|PlayStation|Xbox|Nintendo|Switch|Roku|Sonos)\s+((?:Pro|Max|Ultra|Plus|Mini|Lite|Air|SE|Studio|Series\s*\d*|Gen\s*\d*|Edition|[A-Z]{1,3}[\-\s]?\d{2,4}[A-Za-z]*|[\w\-]+\s+[\w\-]+))/gi;
   
   let brandMatch;
-  while ((brandMatch = brandModelPattern.exec(html)) !== null) {
-    const name = `${brandMatch[1]} ${brandMatch[2]}`.trim();
-    if (name.length > 5 && name.length < 80 && !seenNames.has(name.toLowerCase())) {
+  while ((brandMatch = strictBrandModelPattern.exec(html)) !== null) {
+    const name = `${brandMatch[1]} ${brandMatch[2]}`.replace(/\s+/g, ' ').trim();
+    
+    // Validate it's a real product (has model number or product modifier)
+    const hasModelIndicator = /(?:Pro|Max|Ultra|Plus|Mini|Lite|Air|SE|Studio|\d{2,4}|Gen|Series|Edition)/i.test(name);
+    
+    if (name.length >= 8 && name.length <= 80 && hasModelIndicator && !seenNames.has(name.toLowerCase())) {
       seenNames.add(name.toLowerCase());
-      products.push({ asin: '', name, source: 'text', confidence: 0.8 });
+      products.push({ asin: '', name, source: 'brand_model', confidence: 0.85 });
     }
   }
 
-  // Sort by confidence (highest first)
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STRATEGY 6: FALLBACK - Extract from listicle headings (lower confidence)
+  // Only if we found few high-confidence products
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (products.length < 3) {
+    // Look for numbered product headings like "1. Sony WH-1000XM5" or "# Best: Apple AirPods Pro"
+    const listicleHeadingPattern = /<h[2-4][^>]*>(?:\s*(?:\d+[\.\):]|\#\d*|Best|Top|Our Pick|Editor|Winner|Choice|Recommended)[^<]*)?([A-Z][^<]{10,80})<\/h[2-4]>/gi;
+    let headingMatch;
+    while ((headingMatch = listicleHeadingPattern.exec(html)) !== null) {
+      const text = headingMatch[1].replace(/<[^>]*>/g, '').trim();
+      
+      // Must contain at least one known brand or look like a product name
+      const hasBrand = /\b(Apple|Samsung|Sony|LG|Bose|JBL|Anker|Logitech|Dyson|iRobot|Roomba|Shark|Ninja|Instant\s?Pot|KitchenAid|Cuisinart|Canon|Nikon|GoPro|DJI|Fitbit|Garmin|Ring|Nest|Dell|HP|Lenovo|Microsoft|Google|Amazon)/i.test(text);
+      const looksLikeProduct = /\b(?:Pro|Max|Ultra|Plus|Mini|Gen|Series|\d{3,4})\b/i.test(text);
+      
+      if (text.length >= 10 && text.length <= 100 && (hasBrand || looksLikeProduct) && !seenNames.has(text.toLowerCase())) {
+        seenNames.add(text.toLowerCase());
+        products.push({ asin: '', name: text, source: 'heading', confidence: 0.65 });
+      }
+    }
+  }
+
+  // Sort by confidence (highest first) and limit to top products
   products.sort((a, b) => b.confidence - a.confidence);
 
-  console.log(`[preExtract] Found ${products.length} potential products:`, products.slice(0, 5));
+  console.log(`[preExtract] PRECISION MODE: Found ${products.length} products with high confidence`);
+  console.log(`[preExtract] ASINs: ${seenAsins.size}, Names: ${seenNames.size}`);
+  if (products.length > 0) {
+    console.log(`[preExtract] Top products:`, products.slice(0, 5).map(p => p.asin || p.name));
+  }
+  
   return products;
 };
 
@@ -1698,25 +1772,32 @@ export const analyzeContentAndFindProduct = async (
         .trim()
         .substring(0, 20000);
 
-      const systemPrompt = `TASK: Extract ALL Amazon products from this content. Be thorough - find EVERY product mentioned.
+      const systemPrompt = `TASK: Extract ONLY the specific products that are EXPLICITLY mentioned in this blog post.
 
-HINTS - Products already detected in this page:
+CRITICAL RULES FOR ACCURACY:
+1. ONLY include products that are EXPLICITLY named in the content - do NOT infer or guess
+2. The product name MUST appear VERBATIM in the content (you must be able to quote it)
+3. Do NOT include generic category mentions (e.g., "a good vacuum" is NOT a product)
+4. Do NOT hallucinate or make up products that aren't mentioned
+5. If NO products are explicitly named, return {"products":[]}
+
+ALREADY DETECTED FROM HTML (verify these are mentioned):
 - ASINs found: ${asinsFound.join(', ') || 'none'}
-- Product names found: ${namesFound.slice(0, 10).join(', ') || 'none'}
+- Product names detected: ${namesFound.slice(0, 10).join(', ') || 'none'}
 
-For EACH product, provide:
-1. productName: EXACT product name as written
-2. brand: Brand/manufacturer
-3. category: Product category
-4. verdict: EXACTLY 3 sentences - specific to THIS product, mention brand and name
+For EACH verified product provide:
+{
+  "productName": "EXACT name as written in the content",
+  "exactQuote": "The exact sentence where this product is mentioned",
+  "brand": "Brand/manufacturer",
+  "category": "Product category"
+}
 
-VERDICT RULES:
-- Sentence 1: "[Power word] for [user type], the [Brand] [Product] [main benefit]"
-- Sentence 2: "[Key feature with specific detail], [performance claim]"
-- Sentence 3: "[Trust signal], backed by [warranty/reviews]"
-- NEVER start with "This", "The", "A"
+VERIFICATION: Before adding a product, ask yourself:
+- Can I point to the EXACT sentence where this product is named? If NO, don't include it.
+- Is this a SPECIFIC product (brand + model) or just a category? If category, don't include it.
 
-Return JSON: {"products":[...]}`;
+Return ONLY verified products as JSON: {"products":[...]}`;
 
       const userPrompt = `Title: "${title}"\n\nContent: ${context}`;
       
@@ -1754,11 +1835,57 @@ Return JSON: {"products":[...]}`;
     }
   }
 
+  // Prepare content for validation (strip HTML, lowercase for matching)
+  const contentForValidation = (htmlContent || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+
   // Add AI products (merge data if exists, add new if not)
+  // CRITICAL: Validate that each AI product is ACTUALLY mentioned in the content
   for (const p of aiProducts) {
     if (!p.productName) continue;
     
-    const key = p.productName.toLowerCase().substring(0, 30);
+    const productNameLower = p.productName.toLowerCase();
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // VALIDATION: Verify product is actually mentioned in content
+    // ═══════════════════════════════════════════════════════════════════════════
+    const productWords = productNameLower.split(/\s+/).filter((w: string) => w.length > 2);
+    const significantWords = productWords.filter((w: string) => 
+      !['the', 'and', 'for', 'with', 'pro', 'max', 'plus', 'edition'].includes(w)
+    );
+    
+    // Check if significant words appear in content
+    const matchingWords = significantWords.filter((word: string) => contentForValidation.includes(word));
+    const matchRatio = significantWords.length > 0 ? matchingWords.length / significantWords.length : 0;
+    
+    // Also check for exact phrase match (most reliable)
+    const hasExactMatch = contentForValidation.includes(productNameLower);
+    
+    // Check if brand is mentioned (optional but boosts confidence)
+    const brandLower = (p.brand || '').toLowerCase();
+    const hasBrandMention = brandLower.length > 2 && contentForValidation.includes(brandLower);
+    
+    // More lenient validation:
+    // - Exact match: always accept
+    // - 50%+ word match with brand: accept
+    // - 70%+ word match without brand: accept (brand might be abbreviated)
+    // - Has exactQuote from AI: trust the AI's verification
+    const hasAIQuote = p.exactQuote && p.exactQuote.length > 10;
+    const isValidated = hasExactMatch || 
+                        (matchRatio >= 0.5 && hasBrandMention) || 
+                        (matchRatio >= 0.7) ||
+                        (hasAIQuote && matchRatio >= 0.4);
+    
+    if (!isValidated) {
+      console.log(`[SCAN] REJECTED AI product "${p.productName}" - not found in content (match ratio: ${(matchRatio * 100).toFixed(0)}%, brand: ${hasBrandMention})`);
+      continue;
+    }
+    
+    console.log(`[SCAN] VALIDATED AI product "${p.productName}" - found in content (match: ${(matchRatio * 100).toFixed(0)}%)`);
+    
+    const key = productNameLower.substring(0, 30);
     const existing = allProducts.get(key);
     
     if (existing) {
