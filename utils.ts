@@ -32,6 +32,131 @@ import {
   BoxStyle 
 } from './types';
 
+// ============================================================================
+// CACHE & STORAGE CLASSES
+// ============================================================================
+
+/**
+ * Intelligent LRU Cache with localStorage persistence
+ */
+class IntelligenceCacheClass {
+  private cache = new Map<string, CacheEntry<any>>();
+  private maxSize = 500;
+
+  get<T>(key: string): T | null {
+    const fullKey = `${CACHE_PREFIX}${key}`;
+    const entry = this.cache.get(fullKey);
+    
+    if (entry) {
+      const ttl = entry.ttl || CACHE_TTL_MS;
+      if (Date.now() - entry.timestamp < ttl && entry.version === CACHE_VERSION) {
+        return entry.data as T;
+      }
+      this.cache.delete(fullKey);
+    }
+    
+    // Try localStorage
+    try {
+      const stored = localStorage.getItem(fullKey);
+      if (stored) {
+        const parsed: CacheEntry<T> = JSON.parse(stored);
+        const ttl = parsed.ttl || CACHE_TTL_MS;
+        if (Date.now() - parsed.timestamp < ttl && parsed.version === CACHE_VERSION) {
+          this.cache.set(fullKey, parsed);
+          return parsed.data;
+        }
+        localStorage.removeItem(fullKey);
+      }
+    } catch {}
+    
+    return null;
+  }
+
+  set<T>(key: string, data: T, ttl?: number): void {
+    const fullKey = `${CACHE_PREFIX}${key}`;
+    const entry: CacheEntry<T> = {
+      data,
+      timestamp: Date.now(),
+      version: CACHE_VERSION,
+      ttl,
+    };
+    
+    this.cache.set(fullKey, entry);
+    
+    // Persist to localStorage
+    try {
+      localStorage.setItem(fullKey, JSON.stringify(entry));
+    } catch {}
+    
+    // LRU eviction
+    if (this.cache.size > this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey) {
+        this.cache.delete(firstKey);
+        try {
+          localStorage.removeItem(firstKey);
+        } catch {}
+      }
+    }
+  }
+
+  getAnalysis(hash: string): { products: ProductDetails[]; comparison?: ComparisonData } | null {
+    return this.get(`analysis_${hash}`);
+  }
+
+  setAnalysis(hash: string, data: { products: ProductDetails[]; comparison?: ComparisonData }): void {
+    this.set(`analysis_${hash}`, data, CACHE_TTL_SHORT_MS);
+  }
+
+  getProduct(asin: string): ProductDetails | null {
+    return this.get(`product_${asin}`);
+  }
+
+  setProduct(asin: string, product: ProductDetails): void {
+    this.set(`product_${asin}`, product, CACHE_TTL_MS);
+  }
+
+  clear(): void {
+    this.cache.clear();
+    try {
+      const keys = Object.keys(localStorage).filter(k => k.startsWith(CACHE_PREFIX));
+      keys.forEach(k => localStorage.removeItem(k));
+    } catch {}
+  }
+}
+
+const IntelligenceCache = new IntelligenceCacheClass();
+
+/**
+ * Secure Storage with Web Crypto API (simplified - sync fallback)
+ */
+class SecureStorageClass {
+  // For simplicity, using base64 encoding as "encryption"
+  // In production, implement proper Web Crypto API encryption
+  
+  encryptSync(text: string): string {
+    if (!text) return '';
+    try {
+      return btoa(text);
+    } catch {
+      return text;
+    }
+  }
+
+  decryptSync(encrypted: string): string {
+    if (!encrypted) return '';
+    try {
+      return atob(encrypted);
+    } catch {
+      return encrypted;
+    }
+  }
+}
+
+const SecureStorage = new SecureStorageClass();
+
+
+
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -496,8 +621,8 @@ export const fetchPageContent = async (
     });
 
     // Extract title
-    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    let title = titleMatch 
+const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+        let title = titleMatch 
       ? titleMatch[1].trim()
         .replace(/\s*[|\-–—]\s*.+$/, '') // Remove site name suffix
         .replace(/&#[0-9]+;/g, '') // Remove HTML entities
@@ -2094,6 +2219,90 @@ export const getProxyStats = (): Record<string, { latency: number; failures: num
 
   return stats;
 };
+
+// ============================================================================
+// ADDITIONAL HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Validate and normalize manually entered URL
+ */
+export const validateManualUrl = (url: string): { valid: boolean; normalized?: string; error?: string } => {
+  const trimmed = url.trim();
+  
+  if (!trimmed) {
+    return { valid: false, error: 'URL cannot be empty' };
+  }
+  
+  // Add https:// if no protocol
+  let normalized = trimmed;
+  if (!normalized.match(/^https?:\/\//i)) {
+    normalized = 'https://' + normalized;
+  }
+  
+  // Validate URL format
+  try {
+    const urlObj = new URL(normalized);
+    if (!urlObj.hostname || urlObj.hostname.length < 3) {
+      return { valid: false, error: 'Invalid hostname' };
+    }
+    return { valid: true, normalized };
+  } catch {
+    return { valid: false, error: 'Invalid URL format' };
+  }
+};
+
+/**
+ * Fetch posts from WordPress REST API
+ */
+export const fetchPostsFromWordPressAPI = async (
+  config: AppConfig,
+  page: number = 1,
+  perPage: number = 100
+): Promise<BlogPost[]> => {
+  if (!config.wpUrl) {
+    throw new Error('WordPress URL not configured');
+  }
+  
+  try {
+    const apiBase = config.wpUrl.replace(/\/$/, '') + '/wp-json/wp/v2';
+    const url = `${apiBase}/posts?page=${page}&per_page=${perPage}&_embed`;
+    
+    const headers: Record<string, string> = {};
+    if (config.wpUser && config.wpAppPassword) {
+      const auth = btoa(`${config.wpUser}:${config.wpAppPassword}`);
+      headers['Authorization'] = `Basic ${auth}`;
+    }
+    
+    const response = await fetchWithTimeout(url, 15000, { headers });
+    
+    if (!response.ok) {
+      throw new Error(`WordPress API error: ${response.status}`);
+    }
+    
+    const posts = await response.json();
+    
+    return posts.map((post: any, index: number) => {
+      const { priority, type, status } = calculatePostPriority(
+        post.title?.rendered || '',
+        post.content?.rendered || ''
+      );
+      
+      return {
+        id: post.id,
+        title: post.title?.rendered || 'Untitled',
+        url: post.link || '',
+        postType: post.type || 'post',
+        priority,
+        monetizationStatus: status,
+      };
+    });
+  } catch (error: any) {
+    console.error('[fetchPostsFromWordPressAPI] Error:', error);
+    throw new Error(`Failed to fetch posts from WordPress: ${error.message}`);
+  }
+};
+
 
 
 // ============================================================================
