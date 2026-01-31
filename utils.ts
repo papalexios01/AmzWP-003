@@ -699,56 +699,83 @@ const decodeHtmlEntities = (text: string): string => {
 };
 
 /**
- * PRODUCT CATEGORIES - Physical items that can be purchased on Amazon
+ * PURCHASABLE PRODUCTS - Physical items you can buy on Amazon
+ * STRICT LIST: Only actual product types, not concepts/methods
  */
-const PRODUCT_CATEGORIES = [
-  'tracker', 'trackers', 'smartwatch', 'smartwatches', 'fitness watch', 'fitness band',
-  'shoes', 'sneakers', 'footwear', 'headphones', 'earbuds', 'speaker', 'speakers',
-  'monitor', 'monitors', 'scale', 'scales', 'yoga mat', 'exercise mat', 'bottle', 'bottles',
-  'bag', 'bags', 'backpack', 'backpacks', 'equipment', 'gear', 'gadget', 'gadgets',
-  'device', 'devices', 'machine', 'machines', 'bike', 'bikes', 'treadmill', 'treadmills',
-  'dumbbell', 'dumbbells', 'kettlebell', 'kettlebells', 'barbell', 'barbells', 'weights',
-  'bench', 'benches', 'rack', 'racks', 'belt', 'belts', 'gloves', 'strap', 'straps',
-  'roller', 'foam roller', 'resistance band', 'pull-up bar', 'jump rope', 'rope',
-  'supplement', 'supplements', 'protein', 'powder', 'vitamin', 'vitamins', 'creatine',
-  'blender', 'blenders', 'juicer', 'juicers', 'air fryer', 'instant pot',
-  'mattress', 'pillow', 'pillows', 'massager', 'massage gun', 'theragun',
-  'camera', 'cameras', 'laptop', 'laptops', 'tablet', 'tablets',
-  'fitbit', 'garmin', 'apple watch', 'samsung galaxy', 'xiaomi', 'whoop', 'oura ring',
-  'peloton', 'bowflex', 'nordictrack', 'hyperice', 'mirror gym',
-  'heart rate monitor', 'hrm', 'gps watch', 'running watch', 'cycling computer',
+const PURCHASABLE_PRODUCTS = [
+  'fitness tracker', 'fitness trackers', 'activity tracker', 'activity trackers',
+  'smartwatch', 'smartwatches', 'smart watch', 'smart watches',
+  'running shoes', 'running shoe', 'walking shoes', 'training shoes', 'cross trainers',
+  'headphones', 'earbuds', 'earphones', 'bluetooth speaker', 'speakers',
+  'heart rate monitor', 'hrm', 'chest strap', 'gps watch', 'running watch',
+  'yoga mat', 'yoga mats', 'exercise mat', 'gym mat',
+  'water bottle', 'water bottles', 'shaker bottle', 'protein shaker',
+  'gym bag', 'gym bags', 'duffel bag', 'backpack', 'backpacks',
+  'dumbbell', 'dumbbells', 'kettlebell', 'kettlebells', 'barbell', 'barbells',
+  'weight plates', 'weight bench', 'squat rack', 'pull-up bar', 'power rack',
+  'resistance band', 'resistance bands', 'exercise bands', 'loop bands',
+  'foam roller', 'foam rollers', 'massage ball', 'lacrosse ball',
+  'jump rope', 'jump ropes', 'speed rope', 'weighted rope',
+  'treadmill', 'treadmills', 'elliptical', 'exercise bike', 'stationary bike', 'spin bike',
+  'rowing machine', 'rowing machines', 'rower',
+  'massage gun', 'massage guns', 'percussion massager', 'theragun', 'hypervolt',
+  'blender', 'blenders', 'nutribullet', 'vitamix', 'ninja blender',
+  'air fryer', 'instant pot', 'pressure cooker', 'food processor',
+  'protein powder', 'whey protein', 'pre-workout', 'creatine', 'bcaa', 'supplements',
+  'fitness gloves', 'lifting gloves', 'workout gloves', 'weight belt', 'lifting belt',
+  'knee sleeves', 'wrist wraps', 'lifting straps', 'ab roller', 'ab wheel',
+  'scale', 'scales', 'smart scale', 'body fat scale', 'weight scale',
+  'sleep tracker', 'oura ring', 'whoop band', 'whoop strap',
+  'compression socks', 'compression sleeves', 'arm sleeves',
 ];
 
 /**
- * BRAND NAMES - Specific product brands
+ * PRODUCT BRAND NAMES - Specific brands that make products
  */
-const BRAND_NAMES = [
-  'fitbit', 'garmin', 'apple', 'samsung', 'xiaomi', 'whoop', 'oura', 'polar', 'suunto',
-  'nike', 'adidas', 'under armour', 'reebok', 'asics', 'brooks', 'new balance', 'hoka',
-  'peloton', 'bowflex', 'nordictrack', 'theragun', 'hyperice', 'rogue', 'titan',
-  'vitamix', 'ninja', 'nutribullet', 'instant pot', 'cuisinart',
-  'amazon', 'bose', 'sony', 'jabra', 'beats', 'anker', 'jbl',
+const PRODUCT_BRANDS = [
+  'fitbit', 'garmin', 'polar', 'suunto', 'coros', 'amazfit',
+  'apple watch', 'samsung galaxy watch', 'google pixel watch',
+  'whoop', 'oura', 'withings',
+  'nike', 'adidas', 'under armour', 'reebok', 'puma',
+  'asics', 'brooks', 'new balance', 'hoka', 'saucony', 'on cloud',
+  'peloton', 'bowflex', 'nordictrack', 'proform', 'sole', 'schwinn',
+  'rogue fitness', 'titan fitness', 'rep fitness', 'eleiko',
+  'theragun', 'hyperice', 'hypervolt', 'timpro',
+  'vitamix', 'nutribullet', 'ninja', 'cuisinart', 'kitchenaid',
+  'optimum nutrition', 'myprotein', 'ghost', 'transparent labs',
+  'bose', 'sony', 'jabra', 'beats', 'jbl', 'airpods',
 ];
 
 /**
- * NON-PRODUCT TERMS - Indicate informational/lifestyle content, NOT product reviews
+ * Check if title contains a purchasable product
  */
-const NON_PRODUCT_TERMS = [
-  'time', 'times', 'day', 'days', 'week', 'weeks', 'month', 'months', 'year', 'years',
-  'way', 'ways', 'method', 'methods', 'technique', 'techniques', 'step', 'steps',
-  'tip', 'tips', 'trick', 'tricks', 'habit', 'habits', 'routine', 'routines',
-  'benefit', 'benefits', 'reason', 'reasons', 'mistake', 'mistakes', 'myth', 'myths',
-  'exercise', 'exercises', 'workout', 'workouts', 'stretch', 'stretches', 'movement',
-  'food', 'foods', 'meal', 'meals', 'diet', 'diets', 'recipe', 'recipes', 'nutrition',
-  'sleep', 'rest', 'recovery', 'hydration', 'water', 'breathing', 'meditation',
-  'running', 'walking', 'swimming', 'cycling', 'hiking', 'yoga', 'pilates', 'cardio',
-  'weight loss', 'fat loss', 'muscle', 'strength', 'endurance', 'flexibility', 'mobility',
-  'body', 'mind', 'health', 'healthy', 'fitness', 'wellness', 'lifestyle',
-  'morning', 'evening', 'night', 'daily', 'weekly', 'age', 'beginner', 'advanced',
-];
+const titleContainsProduct = (title: string): boolean => {
+  const t = title.toLowerCase();
+  return PURCHASABLE_PRODUCTS.some(p => t.includes(p)) ||
+         PRODUCT_BRANDS.some(b => t.includes(b.toLowerCase()));
+};
 
 /**
- * Analyze post content to determine priority and monetization status - ENTERPRISE GRADE
+ * Extract what comes after "best/top X" in a title
+ */
+const extractBestSubject = (title: string): string | null => {
+  const t = title.toLowerCase();
+  const match = t.match(/(?:best|top)\s+(?:\d+\s+)?(.+?)(?:\s+for\s|\s+in\s|\s+of\s|\s+\d{4}|\s*[-:|]|\s*$)/i);
+  return match ? match[1].trim() : null;
+};
+
+/**
+ * Check if a subject is a purchasable product category
+ */
+const isProductSubject = (subject: string): boolean => {
+  if (!subject) return false;
+  const s = subject.toLowerCase();
+  return PURCHASABLE_PRODUCTS.some(p => s.includes(p) || p.includes(s)) ||
+         PRODUCT_BRANDS.some(b => s.includes(b.toLowerCase()));
+};
+
+/**
+ * Analyze post to determine priority - STRICT PRODUCT-ONLY LOGIC
  */
 const analyzePostForPriority = (title: string, content: string): {
   priority: 'critical' | 'high' | 'medium' | 'low';
@@ -757,120 +784,69 @@ const analyzePostForPriority = (title: string, content: string): {
   const titleLower = title.toLowerCase();
   const contentLower = content.toLowerCase();
 
-  // Step 1: Check for existing affiliate links (already monetized)
+  // Check for existing affiliate links (already monetized)
   const affiliatePatterns = [
     /amazon\.com\/.*?tag=/i,
     /amzn\.to\//i,
-    /href="[^"]*amazon[^"]*tag=/i,
     /data-asin="[A-Z0-9]{10}"/i,
     /aawp-product/i,
     /wp-block-flavor/i,
     /class="[^"]*product-?box/i,
-    /affiliate[-_]?link/i,
-    /associate-?id/i,
   ];
 
-  const isMonetized = affiliatePatterns.some(pattern => pattern.test(content));
-  if (isMonetized) {
+  if (affiliatePatterns.some(p => p.test(content))) {
     return { priority: 'low', status: 'monetized' };
   }
 
-  // Step 2: Check if title contains SPECIFIC product categories or brand names
-  const hasProductInTitle = PRODUCT_CATEGORIES.some(cat => {
-    const words = cat.split(' ');
-    if (words.length > 1) {
-      return titleLower.includes(cat);
-    }
-    return new RegExp(`\\b${cat}s?\\b`, 'i').test(titleLower);
-  });
-
-  const hasBrandInTitle = BRAND_NAMES.some(brand =>
-    new RegExp(`\\b${brand}\\b`, 'i').test(titleLower)
-  );
-
-  // Step 3: Check for "best/top X [PRODUCTS]" pattern
-  const bestTopMatch = titleLower.match(/(?:best|top)\s+(\d+\s+)?(.+?)(?:\s+for\s|\s+in\s|\s+of\s|\s+to\s|\s*[-:|]|\s*$)/i);
-  let isBestProductList = false;
-
-  if (bestTopMatch) {
-    const subject = bestTopMatch[2]?.trim() || '';
-    // Only CRITICAL if subject is a product category
-    isBestProductList = PRODUCT_CATEGORIES.some(cat => subject.includes(cat)) ||
-                       BRAND_NAMES.some(brand => subject.includes(brand));
-    // Downgrade if it's about non-product things
-    if (NON_PRODUCT_TERMS.some(term => subject.startsWith(term) || subject === term)) {
-      isBestProductList = false;
-    }
+  // CRITICAL: "Best/Top X [PRODUCT]" where [PRODUCT] is purchasable
+  const bestSubject = extractBestSubject(titleLower);
+  if (bestSubject && isProductSubject(bestSubject)) {
+    return { priority: 'critical', status: 'opportunity' };
   }
 
-  // Step 4: Check for "[PRODUCT/BRAND] review" pattern
-  const isProductReview = /\breview\b/i.test(titleLower) && (hasProductInTitle || hasBrandInTitle);
+  // CRITICAL: "[PRODUCT] Review" or "[BRAND] Review"
+  if (/\breview\b/i.test(titleLower) && titleContainsProduct(titleLower)) {
+    return { priority: 'critical', status: 'opportunity' };
+  }
 
-  // Step 5: Check for product vs product comparisons (Fitbit vs Apple Watch)
-  const vsMatch = titleLower.match(/(.+?)\s+(?:vs\.?|versus|or)\s+(.+?)(?:\s*[-:|]|\s*$)/i);
-  let isProductComparison = false;
-
+  // CRITICAL: "[PRODUCT/BRAND] vs [PRODUCT/BRAND]"
+  const vsMatch = titleLower.match(/(.+?)\s+(?:vs\.?|versus)\s+(.+?)(?:\s*[-:|]|\s*$)/i);
   if (vsMatch) {
-    const part1 = vsMatch[1]?.trim() || '';
-    const part2 = vsMatch[2]?.trim() || '';
-
-    const part1IsProduct = PRODUCT_CATEGORIES.some(cat => part1.includes(cat)) ||
-                          BRAND_NAMES.some(brand => part1.includes(brand));
-    const part2IsProduct = PRODUCT_CATEGORIES.some(cat => part2.includes(cat)) ||
-                          BRAND_NAMES.some(brand => part2.includes(brand));
-
-    // Both sides must be products OR at least one side with product + other not being activity
-    const part1IsActivity = NON_PRODUCT_TERMS.some(term => part1 === term || part1.startsWith(term + ' '));
-    const part2IsActivity = NON_PRODUCT_TERMS.some(term => part2 === term || part2.startsWith(term + ' '));
-
-    isProductComparison = (part1IsProduct || part2IsProduct) && !(part1IsActivity && part2IsActivity);
-
-    // "Walking vs Running" = NOT product comparison
-    if (part1IsActivity && part2IsActivity && !part1IsProduct && !part2IsProduct) {
-      isProductComparison = false;
+    const p1 = vsMatch[1].trim();
+    const p2 = vsMatch[2].trim();
+    if ((titleContainsProduct(p1) || titleContainsProduct(p2)) &&
+        !(/running|walking|swimming|cycling|cardio|hiit|yoga|diet|fasting/i.test(p1 + ' ' + p2))) {
+      return { priority: 'critical', status: 'opportunity' };
     }
   }
 
-  // CRITICAL: Product lists, specific product reviews, or product comparisons
-  if (isBestProductList || isProductReview || isProductComparison) {
+  // CRITICAL: "Buying Guide" + product mentioned
+  if (/buying\s+guide|buyer'?s?\s+guide/i.test(titleLower) && titleContainsProduct(titleLower)) {
     return { priority: 'critical', status: 'opportunity' };
   }
 
-  // Also CRITICAL: Buying guides for products
-  if (/buying\s+guide|buyer'?s?\s+guide/i.test(titleLower) && (hasProductInTitle || hasBrandInTitle)) {
-    return { priority: 'critical', status: 'opportunity' };
-  }
-
-  // HIGH: Title mentions product categories or brands (but not in review/list format)
-  if (hasProductInTitle || hasBrandInTitle) {
+  // HIGH: Title mentions a specific product or brand
+  if (titleContainsProduct(titleLower)) {
     return { priority: 'high', status: 'opportunity' };
   }
 
-  // HIGH: Content has multiple product mentions
-  const productMentionsInContent = PRODUCT_CATEGORIES.filter(cat => {
-    const regex = new RegExp(`\\b${cat}\\b`, 'gi');
-    return (contentLower.match(regex) || []).length >= 2;
-  }).length;
+  // HIGH: Content mentions 5+ different products
+  const productMentions = PURCHASABLE_PRODUCTS.filter(p =>
+    contentLower.includes(p)
+  ).length;
 
-  if (productMentionsInContent >= 3) {
+  if (productMentions >= 5) {
     return { priority: 'high', status: 'opportunity' };
   }
 
-  // MEDIUM: General how-to/guide content that MIGHT have product opportunities
-  const couldHaveProducts = /\bhow\s+to\b|\bguide\b|\bessential|\bmust[\s-]?have/i.test(titleLower);
-
-  if (couldHaveProducts) {
-    // Check if content actually mentions products
-    const hasProductsInBody = PRODUCT_CATEGORIES.some(cat =>
-      new RegExp(`\\b${cat}\\b`, 'i').test(contentLower.substring(0, 3000))
-    );
-
-    if (hasProductsInBody) {
+  // MEDIUM: How-to or guide that mentions at least one product
+  if (/\bhow\s+to\b|\bguide\b|\bessential/i.test(titleLower)) {
+    if (productMentions >= 1) {
       return { priority: 'medium', status: 'opportunity' };
     }
   }
 
-  // LOW: Pure informational content with no product connection
+  // LOW: Everything else (informational, lifestyle, tips, etc.)
   return { priority: 'low', status: 'opportunity' };
 };
 
@@ -1745,19 +1721,33 @@ export const analyzeContentAndFindProduct = async (
     // Process detected products
     const products: ProductDetails[] = [];
 
+    console.log('[Analysis] Processing', parsed.products?.length || 0, 'detected products');
+    console.log('[Analysis] SerpAPI key configured:', !!config.serpApiKey);
+
     for (const p of (parsed.products || [])) {
       // Skip low confidence matches
-      if (p.confidence < 40) continue;
+      if (p.confidence < 40) {
+        console.log('[Analysis] Skipping low confidence product:', p.title, p.confidence);
+        continue;
+      }
 
       // Try to fetch real product data from SerpAPI
       let productData: Partial<ProductDetails> = {};
 
       if (config.serpApiKey) {
+        console.log('[Analysis] Fetching SerpAPI data for:', p.searchQuery);
         try {
           productData = await searchAmazonProduct(p.searchQuery, config.serpApiKey);
-        } catch (error) {
-          console.warn('[Analysis] SerpAPI lookup failed for:', p.searchQuery);
+          console.log('[Analysis] SerpAPI result:', {
+            asin: productData.asin,
+            price: productData.price,
+            title: productData.title?.substring(0, 50)
+          });
+        } catch (error: any) {
+          console.error('[Analysis] SerpAPI lookup failed for:', p.searchQuery, error.message);
         }
+      } else {
+        console.warn('[Analysis] No SerpAPI key configured - using placeholder data');
       }
 
       // Determine insertion index based on placement
@@ -2725,52 +2715,95 @@ export const validateManualUrl = (url: string): { isValid: boolean; normalizedUr
 };
 
 /**
- * Fetch posts from WordPress REST API
+ * Fetch ALL posts from WordPress REST API with pagination
  */
 export const fetchPostsFromWordPressAPI = async (
   config: AppConfig,
-  page: number = 1,
-  perPage: number = 100
+  onProgress?: (current: number, total: number) => void
 ): Promise<BlogPost[]> => {
   if (!config.wpUrl) {
     throw new Error('WordPress URL not configured');
   }
-  
+
+  const allPosts: BlogPost[] = [];
+  const perPage = 100;
+  let currentPage = 1;
+  let totalPages = 1;
+  let totalPosts = 0;
+
+  const apiBase = config.wpUrl.replace(/\/$/, '') + '/wp-json/wp/v2';
+
+  const headers: Record<string, string> = {};
+  if (config.wpUser && config.wpAppPassword) {
+    const auth = btoa(`${config.wpUser}:${config.wpAppPassword}`);
+    headers['Authorization'] = `Basic ${auth}`;
+  }
+
   try {
-    const apiBase = config.wpUrl.replace(/\/$/, '') + '/wp-json/wp/v2';
-    const url = `${apiBase}/posts?page=${page}&per_page=${perPage}&_embed`;
-    
-    const headers: Record<string, string> = {};
-    if (config.wpUser && config.wpAppPassword) {
-      const auth = btoa(`${config.wpUser}:${config.wpAppPassword}`);
-      headers['Authorization'] = `Basic ${auth}`;
+    while (currentPage <= totalPages) {
+      const url = `${apiBase}/posts?page=${currentPage}&per_page=${perPage}&_embed=false`;
+
+      console.log(`[WP API] Fetching page ${currentPage}/${totalPages}...`);
+
+      const response = await fetchWithTimeout(url, 30000, { headers });
+
+      if (!response.ok) {
+        if (response.status === 400 && currentPage > 1) {
+          break;
+        }
+        throw new Error(`WordPress API error: ${response.status}`);
+      }
+
+      if (currentPage === 1) {
+        const totalPagesHeader = response.headers.get('X-WP-TotalPages');
+        const totalPostsHeader = response.headers.get('X-WP-Total');
+        totalPages = totalPagesHeader ? parseInt(totalPagesHeader, 10) : 1;
+        totalPosts = totalPostsHeader ? parseInt(totalPostsHeader, 10) : 0;
+        console.log(`[WP API] Total posts: ${totalPosts}, Total pages: ${totalPages}`);
+      }
+
+      const posts = await response.json();
+
+      if (!Array.isArray(posts) || posts.length === 0) {
+        break;
+      }
+
+      for (const post of posts) {
+        const { priority, type, status } = calculatePostPriority(
+          post.title?.rendered || '',
+          post.content?.rendered || ''
+        );
+
+        allPosts.push({
+          id: post.id,
+          title: decodeHtmlEntities(post.title?.rendered || 'Untitled'),
+          url: post.link || '',
+          postType: post.type || 'post',
+          priority,
+          monetizationStatus: status,
+        });
+      }
+
+      if (onProgress) {
+        onProgress(allPosts.length, totalPosts);
+      }
+
+      currentPage++;
+
+      if (currentPage <= totalPages) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
     }
-    
-    const response = await fetchWithTimeout(url, 15000, { headers });
-    
-    if (!response.ok) {
-      throw new Error(`WordPress API error: ${response.status}`);
-    }
-    
-    const posts = await response.json();
-    
-    return posts.map((post: any, index: number) => {
-      const { priority, type, status } = calculatePostPriority(
-        post.title?.rendered || '',
-        post.content?.rendered || ''
-      );
-      
-      return {
-        id: post.id,
-        title: post.title?.rendered || 'Untitled',
-        url: post.link || '',
-        postType: post.type || 'post',
-        priority,
-        monetizationStatus: status,
-      };
-    });
+
+    console.log(`[WP API] Fetched ${allPosts.length} total posts`);
+    return allPosts;
+
   } catch (error: any) {
     console.error('[fetchPostsFromWordPressAPI] Error:', error);
+    if (allPosts.length > 0) {
+      console.log(`[WP API] Returning ${allPosts.length} posts fetched before error`);
+      return allPosts;
+    }
     throw new Error(`Failed to fetch posts from WordPress: ${error.message}`);
   }
 };

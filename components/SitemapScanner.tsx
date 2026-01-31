@@ -157,22 +157,25 @@ export const SitemapScanner: React.FC<SitemapScannerProps> = ({
   // ========== WORDPRESS API DISCOVERY ==========
   const handleWordPressAPI = async () => {
     if (!config.wpUrl || !config.wpUser || !config.wpAppPassword) {
-      showToast('Configure WordPress credentials first (click ⚙️ icon)', 'warning');
+      showToast('Configure WordPress credentials first', 'warning');
       return;
     }
 
     setStatus('scanning');
     setErrorMessage(null);
     setDiscoveryMethod('wordpress');
+    setAuditProgress({ current: 0, total: 0 });
 
     try {
-      const discoveredPosts = await fetchPostsFromWordPressAPI(config);
-      
+      const discoveredPosts = await fetchPostsFromWordPressAPI(config, (current, total) => {
+        setAuditProgress({ current, total });
+      });
+
       setPosts(discoveredPosts);
       setSitemapUrl(config.wpUrl);
       setStatus('complete');
-      showToast(`✓ Found ${discoveredPosts.length} posts via WordPress API!`, 'success');
-      
+      showToast(`Found ${discoveredPosts.length} posts via WordPress API!`, 'success');
+
     } catch (error: any) {
       console.error('[WordPress API] Error:', error);
       setErrorMessage(`WordPress API Error: ${error.message}`);
@@ -288,12 +291,14 @@ export const SitemapScanner: React.FC<SitemapScannerProps> = ({
             <button
               onClick={handleSitemapFetch}
               disabled={status === 'scanning' || status === 'auditing' || !sitemapUrl.trim()}
-              className="px-8 py-4 bg-gradient-to-r from-brand-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 text-white font-black rounded-2xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-xl hover:shadow-brand-500/25"
+              className="px-8 py-4 bg-gradient-to-r from-brand-600 to-emerald-600 hover:from-brand-500 hover:to-emerald-500 text-white font-black rounded-2xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-xl hover:shadow-brand-500/25"
             >
               {status === 'scanning' ? (
                 <>
                   <i className="fa-solid fa-spinner fa-spin" />
-                  Scanning...
+                  {auditProgress.total > 0
+                    ? `Fetching ${auditProgress.current}/${auditProgress.total}...`
+                    : 'Scanning...'}
                 </>
               ) : status === 'auditing' ? (
                 <>
@@ -312,11 +317,22 @@ export const SitemapScanner: React.FC<SitemapScannerProps> = ({
             <button
               onClick={handleWordPressAPI}
               disabled={status === 'scanning' || status === 'auditing'}
-              className="px-6 py-4 bg-dark-800 hover:bg-dark-700 text-white font-bold rounded-2xl transition-all border border-dark-700 hover:border-brand-500/50 disabled:opacity-50 flex items-center gap-2"
-              title="Fetch posts directly from WordPress REST API"
+              className="px-6 py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-2xl transition-all disabled:opacity-50 flex items-center gap-2"
+              title="Fetch ALL posts from WordPress REST API"
             >
-              <i className="fa-brands fa-wordpress text-lg" />
-              <span className="hidden md:inline">WP API</span>
+              {status === 'scanning' && discoveryMethod === 'wordpress' ? (
+                <>
+                  <i className="fa-solid fa-spinner fa-spin" />
+                  {auditProgress.total > 0
+                    ? `${auditProgress.current}/${auditProgress.total}`
+                    : 'Fetching...'}
+                </>
+              ) : (
+                <>
+                  <i className="fa-brands fa-wordpress text-lg" />
+                  <span className="hidden md:inline">WP API</span>
+                </>
+              )}
             </button>
 
             {/* Manual Add Button */}
