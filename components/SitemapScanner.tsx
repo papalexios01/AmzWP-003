@@ -208,12 +208,12 @@ export const SitemapScanner: React.FC<SitemapScannerProps> = ({
       return;
     }
 
-    if (posts.some(p => p.url.toLowerCase() === validation.normalizedUrl.toLowerCase())) {
+    if validation.normalizedUrl && (posts.some(p => p.url.toLowerCase() === validation.normalizedUrl.toLowerCase())) {
       showToast('URL already in list', 'warning');
       return;
     }
 
-    const newPost = createBlogPostFromUrl(validation.normalizedUrl, posts.length);
+    const newPost = createBlogPostFromUrl(validation.normalizedUrl!, posts.length);
     setPosts(prev => [newPost, ...prev]);
     setManualUrl('');
     setShowManualAdd(false);
