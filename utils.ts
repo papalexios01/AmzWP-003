@@ -116,6 +116,14 @@ class IntelligenceCacheClass {
     this.set(`product_${asin}`, product, CACHE_TTL_MS);
   }
 
+  deleteProduct(asin: string): void {
+    const key = `${CACHE_PREFIX}product_${asin}`;
+    this.cache.delete(key);
+    try {
+      localStorage.removeItem(key);
+    } catch {}
+  }
+
   clear(): void {
     this.cache.clear();
     try {
@@ -2014,9 +2022,13 @@ export const fetchProductByASIN = async (
   }
 
   const cached = IntelligenceCache.getProduct(asin);
-  if (cached && cached.price !== '$XX.XX') {
+  if (cached && cached.price !== '$XX.XX' && cached.imageUrl) {
     console.log('[SerpAPI] Returning cached product:', asin);
     return cached;
+  }
+
+  if (cached && !cached.imageUrl) {
+    console.log('[SerpAPI] Cache hit but missing image, refetching:', asin);
   }
 
   console.log('[SerpAPI] Fetching product by ASIN:', asin);
@@ -3017,4 +3029,24 @@ export default {
   validateManualUrl,
   createBlogPostFromUrl,
 };
+
+// ============================================================================
+// DEBUG UTILITIES - Available in browser console as window.amzDebug
+// ============================================================================
+if (typeof window !== 'undefined') {
+  (window as any).amzDebug = {
+    clearCache: () => {
+      IntelligenceCache.clear();
+      console.log('[DEBUG] Cache cleared');
+    },
+    clearProduct: (asin: string) => {
+      IntelligenceCache.deleteProduct(asin);
+      console.log(`[DEBUG] Cleared cache for product: ${asin}`);
+    },
+    viewCache: () => {
+      console.log('[DEBUG] Cache not directly accessible, but you can clear specific products with clearProduct(asin)');
+    }
+  };
+  console.log('[AMZ] Debug utilities available: window.amzDebug.clearCache(), window.amzDebug.clearProduct(asin)');
+}
 2240
