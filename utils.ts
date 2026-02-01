@@ -2061,7 +2061,21 @@ export const fetchProductByASIN = async (
       price = result.price;
     }
 
-    const imageUrl = result.main_image?.link || result.main_image || result.images?.[0]?.link || result.images?.[0] || '';
+    let imageUrl = '';
+    if (result.main_image?.link) {
+      imageUrl = result.main_image.link;
+    } else if (typeof result.main_image === 'string') {
+      imageUrl = result.main_image;
+    } else if (result.images && result.images.length > 0) {
+      const firstImg = result.images[0];
+      imageUrl = typeof firstImg === 'string' ? firstImg : (firstImg?.link || firstImg?.url || '');
+    } else if (result.thumbnail) {
+      imageUrl = result.thumbnail;
+    } else if (result.image) {
+      imageUrl = result.image;
+    }
+
+    console.log('[SerpAPI] Image extraction - main_image:', result.main_image, 'images:', result.images?.length, 'thumbnail:', result.thumbnail, 'Final:', imageUrl);
 
     const product: ProductDetails = {
       id: `prod-${asin}-${Date.now()}`,
