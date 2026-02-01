@@ -37,7 +37,7 @@ Deno.serve(async (req: Request) => {
     let serpApiUrl: string;
 
     if (type === 'product' && asin) {
-      serpApiUrl = `https://serpapi.com/search.json?engine=amazon_product&product_id=${encodeURIComponent(asin)}&amazon_domain=amazon.com&api_key=${encodeURIComponent(apiKey)}`;
+      serpApiUrl = `https://serpapi.com/search.json?engine=amazon_product&asin=${encodeURIComponent(asin)}&amazon_domain=amazon.com&api_key=${encodeURIComponent(apiKey)}`;
     } else if (type === 'search' && query) {
       serpApiUrl = `https://serpapi.com/search.json?engine=amazon&amazon_domain=amazon.com&k=${encodeURIComponent(query)}&api_key=${encodeURIComponent(apiKey)}`;
     } else {
