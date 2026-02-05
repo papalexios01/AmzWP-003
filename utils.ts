@@ -1384,19 +1384,35 @@ export const callAIProvider = async (
 /**
  * Call Google Gemini API
  */
+const extractApiKey = (rawKey: string | undefined, prefix?: string): string => {
+  if (!rawKey) return '';
+
+  const decrypted = SecureStorage.decryptSync(rawKey);
+
+  if (prefix) {
+    if (decrypted.startsWith(prefix)) return decrypted;
+    if (rawKey.startsWith(prefix)) return rawKey;
+  }
+
+  return decrypted || rawKey;
+};
+
 const callGemini = async (
   config: AppConfig,
   systemPrompt: string,
   userPrompt: string,
   options: { temperature: number; maxTokens: number; jsonMode: boolean }
 ): Promise<AIResponse> => {
-  const apiKey = SecureStorage.decryptSync(config.geminiApiKey || '');
+  const apiKey = extractApiKey(config.geminiApiKey, 'AIza');
+
   if (!apiKey) {
-    throw new Error('Gemini API key not configured');
+    throw new Error('Gemini API key not configured. Please add your API key in Settings > Brain Core.');
   }
 
   const model = config.aiModel || 'gemini-2.0-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  console.log('[Gemini] Calling API with model:', model);
 
   const response = await fetchWithTimeout(
     url,
@@ -1419,6 +1435,17 @@ const callGemini = async (
 
   if (!response.ok) {
     const errorText = await response.text();
+
+    if (response.status === 400 && errorText.includes('API_KEY')) {
+      throw new Error('Gemini API key is invalid. Please check your API key in Settings.');
+    }
+    if (response.status === 403) {
+      throw new Error('Gemini API key does not have access to this model. Please check your API key permissions.');
+    }
+    if (response.status === 429) {
+      throw new Error('Gemini rate limit exceeded. Please wait a moment and try again.');
+    }
+
     throw new Error(`Gemini API error: ${response.status} - ${truncate(errorText, 100)}`);
   }
 
@@ -1426,7 +1453,7 @@ const callGemini = async (
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
   const finishReason = data.candidates?.[0]?.finishReason || '';
 
-  return { 
+  return {
     text,
     model,
     finishReason,
@@ -1447,12 +1474,15 @@ const callOpenAI = async (
   userPrompt: string,
   options: { temperature: number; maxTokens: number; jsonMode: boolean }
 ): Promise<AIResponse> => {
-  const apiKey = SecureStorage.decryptSync(config.openaiApiKey || '');
+  const apiKey = extractApiKey(config.openaiApiKey, 'sk-');
+
   if (!apiKey) {
-    throw new Error('OpenAI API key not configured');
+    throw new Error('OpenAI API key not configured. Please add your API key in Settings > Brain Core.');
   }
 
   const model = config.aiModel || 'gpt-4o';
+
+  console.log('[OpenAI] Calling API with model:', model);
 
   const response = await fetchWithTimeout(
     'https://api.openai.com/v1/chat/completions',
@@ -1478,6 +1508,17 @@ const callOpenAI = async (
 
   if (!response.ok) {
     const errorText = await response.text();
+
+    if (response.status === 401) {
+      throw new Error('OpenAI API key is invalid. Please check your API key in Settings.');
+    }
+    if (response.status === 429) {
+      throw new Error('OpenAI rate limit exceeded. Please wait a moment and try again.');
+    }
+    if (response.status === 402 || errorText.includes('billing')) {
+      throw new Error('OpenAI account has insufficient credits. Please add credits to your account.');
+    }
+
     throw new Error(`OpenAI API error: ${response.status} - ${truncate(errorText, 100)}`);
   }
 
@@ -1503,12 +1544,15 @@ const callAnthropic = async (
   userPrompt: string,
   options: { temperature: number; maxTokens: number }
 ): Promise<AIResponse> => {
-  const apiKey = SecureStorage.decryptSync(config.anthropicApiKey || '');
+  const apiKey = extractApiKey(config.anthropicApiKey, 'sk-ant-');
+
   if (!apiKey) {
-    throw new Error('Anthropic API key not configured');
+    throw new Error('Anthropic API key not configured. Please add your API key in Settings > Brain Core.');
   }
 
   const model = config.aiModel || 'claude-3-5-sonnet-20241022';
+
+  console.log('[Anthropic] Calling API with model:', model);
 
   const response = await fetchWithTimeout(
     'https://api.anthropic.com/v1/messages',
@@ -1532,6 +1576,14 @@ const callAnthropic = async (
 
   if (!response.ok) {
     const errorText = await response.text();
+
+    if (response.status === 401) {
+      throw new Error('Anthropic API key is invalid. Please check your API key in Settings.');
+    }
+    if (response.status === 429) {
+      throw new Error('Anthropic rate limit exceeded. Please wait a moment and try again.');
+    }
+
     throw new Error(`Anthropic API error: ${response.status} - ${truncate(errorText, 100)}`);
   }
 
@@ -1556,12 +1608,15 @@ const callGroq = async (
   userPrompt: string,
   options: { temperature: number; maxTokens: number; jsonMode: boolean }
 ): Promise<AIResponse> => {
-  const apiKey = SecureStorage.decryptSync(config.groqApiKey || '');
+  const apiKey = extractApiKey(config.groqApiKey, 'gsk_');
+
   if (!apiKey) {
-    throw new Error('Groq API key not configured');
+    throw new Error('Groq API key not configured. Please add your API key in Settings > Brain Core.');
   }
 
   const model = config.customModel || 'llama-3.3-70b-versatile';
+
+  console.log('[Groq] Calling API with model:', model);
 
   const response = await fetchWithTimeout(
     'https://api.groq.com/openai/v1/chat/completions',
@@ -1587,6 +1642,14 @@ const callGroq = async (
 
   if (!response.ok) {
     const errorText = await response.text();
+
+    if (response.status === 401) {
+      throw new Error('Groq API key is invalid. Please check your API key in Settings.');
+    }
+    if (response.status === 429) {
+      throw new Error('Groq rate limit exceeded. Please wait a moment and try again.');
+    }
+
     throw new Error(`Groq API error: ${response.status} - ${truncate(errorText, 100)}`);
   }
 
@@ -1610,12 +1673,19 @@ const callOpenRouter = async (
   userPrompt: string,
   options: { temperature: number; maxTokens: number }
 ): Promise<AIResponse> => {
-  const apiKey = SecureStorage.decryptSync(config.openrouterApiKey || '');
+  const apiKey = extractApiKey(config.openrouterApiKey, 'sk-or-');
+
   if (!apiKey) {
-    throw new Error('OpenRouter API key not configured');
+    throw new Error('OpenRouter API key not configured. Please add your API key in Settings > Brain Core.');
+  }
+
+  if (!apiKey.startsWith('sk-or-')) {
+    console.warn('[OpenRouter] API key format may be invalid. Expected format: sk-or-v1-...');
   }
 
   const model = config.customModel || 'anthropic/claude-3.5-sonnet';
+
+  console.log('[OpenRouter] Calling API with model:', model);
 
   const response = await fetchWithTimeout(
     'https://openrouter.ai/api/v1/chat/completions',
@@ -1642,6 +1712,17 @@ const callOpenRouter = async (
 
   if (!response.ok) {
     const errorText = await response.text();
+
+    if (response.status === 401) {
+      throw new Error('OpenRouter API key is invalid or expired. Please check your API key in Settings.');
+    }
+    if (response.status === 402) {
+      throw new Error('OpenRouter account has insufficient credits. Please add credits to your account.');
+    }
+    if (response.status === 429) {
+      throw new Error('OpenRouter rate limit exceeded. Please wait a moment and try again.');
+    }
+
     throw new Error(`OpenRouter API error: ${response.status} - ${truncate(errorText, 100)}`);
   }
 
