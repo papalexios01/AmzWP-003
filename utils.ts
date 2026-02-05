@@ -2661,29 +2661,57 @@ export const searchAmazonProduct = async (
 };
 
 const extractProductPrice = (result: any): string => {
+  console.log('[extractProductPrice] Analyzing price structure:', {
+    hasBuyboxWinner: !!result.buybox_winner,
+    hasBuyboxPrice: !!result.buybox_winner?.price,
+    hasPrice: !!result.price,
+    priceType: typeof result.price,
+    hasPricing: !!result.pricing,
+    hasPriceString: !!result.price_string
+  });
+
   const priceFields = [
     result.buybox_winner?.price?.raw,
     result.buybox_winner?.price?.value ? `$${result.buybox_winner.price.value}` : null,
+    result.buybox_winner?.price?.display,
     result.price?.raw,
     result.price?.current,
+    result.price?.display,
     result.price?.value ? `$${result.price.value}` : null,
     typeof result.price === 'string' && result.price.includes('$') ? result.price : null,
+    typeof result.price === 'number' ? `$${result.price}` : null,
     result.pricing?.[0]?.price?.raw,
+    result.pricing?.[0]?.price?.display,
     result.price_string,
     result.typical_price?.raw,
+    result.typical_price?.display,
+    result.list_price?.raw,
+    result.current_price?.raw,
+    result.offer_price,
   ];
 
-  for (const field of priceFields) {
+  for (let i = 0; i < priceFields.length; i++) {
+    const field = priceFields[i];
     if (field && typeof field === 'string' && field.includes('$')) {
-      console.log('[SerpAPI] Found price:', field);
+      console.log(`[extractProductPrice] ✓ Found price at field index ${i}:`, field);
       return field;
     }
   }
 
+  console.warn('[extractProductPrice] ✗ No valid price found, returning placeholder');
   return '$XX.XX';
 };
 
 const extractProductImage = (result: any): string => {
+  console.log('[extractProductImage] Analyzing result structure:', {
+    hasMainImage: !!result.main_image,
+    mainImageType: typeof result.main_image,
+    hasImages: !!result.images,
+    imagesLength: Array.isArray(result.images) ? result.images.length : 0,
+    hasThumbnail: !!result.thumbnail,
+    hasImage: !!result.image
+  });
+
   const imageFields = [
     result.main_image?.link,
     typeof result.main_image === 'string' ? result.main_image : null,
@@ -2691,20 +2719,30 @@ const extractProductImage = (result: any): string => {
     result.images?.[0]?.url,
     result.images?.[0]?.large,
     result.images?.[0]?.medium,
+    result.images?.[0]?.hiRes,
+    result.images?.[0]?.large_image,
     typeof result.images?.[0] === 'string' ? result.images[0] : null,
     result.thumbnail,
     result.image,
+    result.image_url,
+    result.main_image_url,
+    result.buybox_winner?.main_image?.link,
+    typeof result.buybox_winner?.main_image === 'string' ? result.buybox_winner.main_image : null,
     result.media?.images?.[0]?.link,
     typeof result.media?.images?.[0] === 'string' ? result.media.images[0] : null,
+    result.product_photo,
+    result.full_image,
   ];
 
-  for (const field of imageFields) {
+  for (let i = 0; i < imageFields.length; i++) {
+    const field = imageFields[i];
     if (field && typeof field === 'string' && field.startsWith('http')) {
-      console.log('[SerpAPI] Found image:', field.substring(0, 60));
+      console.log(`[extractProductImage] ✓ Found image at field index ${i}:`, field.substring(0, 80));
       return upgradeAmazonImageToHighRes(field);
     }
   }
 
+  console.error('[extractProductImage] ✗ No valid image URL found in result');
   return '';
 };
 
@@ -2736,27 +2774,55 @@ export const fetchProductByASIN = async (
   console.log('[SerpAPI] Fetching product by ASIN:', asin);
 
   try {
+    console.log('[fetchProductByASIN] Calling SerpAPI proxy...');
     const data = await callSerpApiProxy({
       type: 'product',
       asin,
       apiKey: cleanKey,
     });
 
-    console.log('[fetchProductByASIN] Response keys:', Object.keys(data));
+    console.log('[fetchProductByASIN] Response received. Top-level keys:', Object.keys(data));
 
     const result = data.product_results || data.product_result;
 
     if (!result) {
+      console.error('[fetchProductByASIN] No product_results or product_result in response');
+      console.error('[fetchProductByASIN] Available keys:', Object.keys(data));
+
       if (data.error) {
         throw new Error(data.error);
+      }
+      if (data.search_information?.organic_results_state === 'Results for exact spelling') {
+        throw new Error('Product not found - ASIN may be invalid');
       }
       throw new Error('Product not found or invalid ASIN');
     }
 
-    console.log('[SerpAPI] Found product:', result.title?.substring(0, 50));
+    console.log('[fetchProductByASIN] Product data extracted successfully');
+    console.log('[fetchProductByASIN] Product title:', result.title?.substring(0, 50));
 
     const price = extractProductPrice(result);
     const imageUrl = extractProductImage(result);
+
+    if (!imageUrl) {
+      console.error('[fetchProductByASIN] ✗✗✗ CRITICAL: No image URL extracted!');
+      console.error('[fetchProductByASIN] Result structure:', JSON.stringify({
+        hasMainImage: !!result.main_image,
+        mainImageType: typeof result.main_image,
+        hasImages: !!result.images,
+        imagesSample: result.images?.[0] ? Object.keys(result.images[0]) : null
+      }));
+    }
+
+    if (price === '$XX.XX') {
+      console.error('[fetchProductByASIN] ✗✗✗ CRITICAL: No price extracted!');
+      console.error('[fetchProductByASIN] Price structure:', JSON.stringify({
+        hasBuyboxWinner: !!result.buybox_winner,
+        buyboxPriceSample: result.buybox_winner?.price,
+        priceType: typeof result.price,
+        priceSample: result.price
+      }));
+    }
 
     const product: ProductDetails = {
       id: `prod-${asin}-${Date.now()}`,
@@ -2777,21 +2843,26 @@ export const fetchProductByASIN = async (
       deploymentMode: 'ELITE_BENTO',
     };
 
-    console.log('[SerpAPI] Final product:', {
-      asin: product.asin,
-      title: product.title?.substring(0, 40),
-      price: product.price,
-      hasImage: !!product.imageUrl
-    });
+    console.log('[fetchProductByASIN] ✓✓✓ Product constructed successfully:');
+    console.log('  ASIN:', product.asin);
+    console.log('  Title:', product.title?.substring(0, 50));
+    console.log('  Price:', product.price);
+    console.log('  Image:', imageUrl ? `✓ ${imageUrl.substring(0, 60)}` : '✗ MISSING');
+    console.log('  Rating:', product.rating);
+    console.log('  Reviews:', product.reviewCount);
 
     if (product.price !== '$XX.XX' && product.imageUrl) {
       IntelligenceCache.setProduct(asin, product);
+      console.log('[fetchProductByASIN] ✓ Cached product successfully');
+    } else {
+      console.warn('[fetchProductByASIN] ⚠ Product not cached (missing price or image)');
     }
 
     return product;
 
   } catch (error: any) {
-    console.error('[fetchProductByASIN] Error:', error.message);
+    console.error('[fetchProductByASIN] ✗✗✗ ERROR:', error.message);
+    console.error('[fetchProductByASIN] Error stack:', error.stack);
     throw error;
   }
 };
