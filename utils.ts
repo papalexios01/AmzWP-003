@@ -1968,14 +1968,23 @@ export const analyzeContentAndFindProduct = async (
       const batchResults = await Promise.all(batchPromises);
 
       for (const { product, productData } of batchResults) {
+        if (!productData.asin || !productData.imageUrl || productData.price === '$XX.XX') {
+          console.log('[Analysis] Skipping product with incomplete data:', product.title, {
+            hasAsin: !!productData.asin,
+            hasImage: !!productData.imageUrl,
+            price: productData.price
+          });
+          continue;
+        }
+
         const insertionIndex = typeof product.paragraphNumber === 'number' ? product.paragraphNumber : 0;
 
         products.push({
           id: product.id || `prod-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           title: productData.title || product.title || product.searchQuery,
-          asin: productData.asin || '',
-          price: productData.price || '$XX.XX',
-          imageUrl: productData.imageUrl || 'https://via.placeholder.com/300x300?text=Product',
+          asin: productData.asin!,
+          price: productData.price!,
+          imageUrl: productData.imageUrl!,
           rating: productData.rating || 4.5,
           reviewCount: productData.reviewCount || 0,
           verdict: productData.verdict || generateDefaultVerdict(product.title || product.searchQuery),
@@ -2046,13 +2055,13 @@ export const analyzeContentAndFindProduct = async (
             productData = await searchAmazonProduct(p1.name, config.serpApiKey);
           }
 
-          if (productData.asin) {
+          if (productData.asin && productData.imageUrl && productData.price && productData.price !== '$XX.XX') {
             fallbackProducts.push({
               id: `fallback-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
               title: productData.title || p1.name,
               asin: productData.asin,
-              price: productData.price || '$XX.XX',
-              imageUrl: productData.imageUrl || '',
+              price: productData.price,
+              imageUrl: productData.imageUrl,
               rating: productData.rating || 4.5,
               reviewCount: productData.reviewCount || 0,
               verdict: generateDefaultVerdict(p1.name),
@@ -2239,7 +2248,15 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
  */
 const getApiKey = (key: string): string => {
   if (!key) return '';
-  return key.trim();
+
+  const trimmed = key.trim();
+  const decrypted = SecureStorage.decryptSync(trimmed);
+
+  if (decrypted && decrypted.length > 10) {
+    return decrypted;
+  }
+
+  return trimmed;
 };
 
 /**
@@ -2272,6 +2289,70 @@ const callSerpApiProxy = async (params: {
   return response.json();
 };
 
+const extractPrice = (result: any): string => {
+  const priceFields = [
+    result.price?.raw,
+    result.price?.current,
+    result.price?.value,
+    result.price_string,
+    result.extracted_price ? `$${result.extracted_price}` : null,
+    result.buybox_winner?.price?.raw,
+    result.buybox_winner?.price?.value ? `$${result.buybox_winner.price.value}` : null,
+    result.typical_price?.raw,
+    typeof result.price === 'string' ? result.price : null,
+    typeof result.price === 'number' ? `$${result.price.toFixed(2)}` : null,
+  ];
+
+  for (const field of priceFields) {
+    if (field && typeof field === 'string' && field.includes('$')) {
+      return field;
+    }
+  }
+
+  return '$XX.XX';
+};
+
+const extractImage = (result: any): string => {
+  const imageFields = [
+    result.main_image,
+    result.thumbnail,
+    result.image,
+    result.primary_image,
+    result.images?.[0]?.link,
+    result.images?.[0]?.url,
+    typeof result.images?.[0] === 'string' ? result.images[0] : null,
+    result.media?.[0]?.link,
+    result.gallery?.[0],
+  ];
+
+  for (const field of imageFields) {
+    if (field && typeof field === 'string' && (field.includes('amazon') || field.includes('http'))) {
+      return upgradeAmazonImageToHighRes(field);
+    }
+  }
+
+  return '';
+};
+
+const extractRating = (result: any): number => {
+  const rating = parseFloat(result.rating) ||
+    parseFloat(result.stars) ||
+    result.rating_breakdown?.average ||
+    4.5;
+  return Math.min(Math.max(rating, 1), 5);
+};
+
+const extractReviewCount = (result: any): number => {
+  const reviewStr = String(
+    result.reviews ||
+    result.reviews_total ||
+    result.ratings_total ||
+    result.global_ratings ||
+    '0'
+  );
+  return parseInt(reviewStr.replace(/[^0-9]/g, '')) || 0;
+};
+
 /**
  * Search Amazon via SerpAPI Edge Function - Enterprise Grade
  */
@@ -2290,7 +2371,7 @@ export const searchAmazonProduct = async (
 
   const cacheKey = `serp_${hashString(query.toLowerCase())}`;
   const cached = IntelligenceCache.get<Partial<ProductDetails>>(cacheKey);
-  if (cached && cached.asin) {
+  if (cached && cached.asin && cached.price !== '$XX.XX' && cached.imageUrl) {
     console.log('[SerpAPI] Returning cached result for:', query.substring(0, 30));
     return cached;
   }
@@ -2304,55 +2385,105 @@ export const searchAmazonProduct = async (
       apiKey: cleanKey,
     });
 
-    console.log('[SerpAPI] Response received, results:', data.organic_results?.length || 0);
+    console.log('[SerpAPI] Response keys:', Object.keys(data));
+    console.log('[SerpAPI] organic_results:', data.organic_results?.length || 0);
+    console.log('[SerpAPI] shopping_results:', data.shopping_results?.length || 0);
 
-    const result = data.organic_results?.[0] || data.shopping_results?.[0];
+    const allResults = [
+      ...(data.organic_results || []),
+      ...(data.shopping_results || []),
+    ];
 
-    if (!result) {
+    if (allResults.length === 0) {
       console.warn('[SerpAPI] No results for:', query);
       return {};
     }
 
-    console.log('[SerpAPI] Found product:', result.title?.substring(0, 50));
+    const result = allResults.find(r => r.asin && (extractImage(r) || r.thumbnail)) || allResults[0];
 
-    let price = '$XX.XX';
-    if (result.price?.raw) {
-      price = result.price.raw;
-    } else if (result.price?.current) {
-      price = result.price.current;
-    } else if (result.extracted_price) {
-      price = `$${result.extracted_price}`;
-    } else if (typeof result.price === 'string') {
-      price = result.price;
-    }
-
-    let imageUrl = result.thumbnail || result.image || result.primary_image || '';
-    if (!imageUrl && result.images?.[0]) {
-      imageUrl = typeof result.images[0] === 'string' ? result.images[0] : (result.images[0]?.link || result.images[0]?.url || '');
-    }
-
-    const highResImageUrl = upgradeAmazonImageToHighRes(imageUrl);
+    console.log('[SerpAPI] Selected result:', {
+      asin: result.asin,
+      title: result.title?.substring(0, 40),
+      hasImage: !!extractImage(result),
+      priceFields: Object.keys(result).filter(k => k.includes('price'))
+    });
 
     const product: Partial<ProductDetails> = {
       asin: result.asin || '',
       title: result.title || query,
-      price: price,
-      imageUrl: highResImageUrl,
-      rating: parseFloat(result.rating) || 4.5,
-      reviewCount: parseInt(String(result.reviews || result.reviews_total || '0').replace(/[^0-9]/g, '')) || 0,
+      price: extractPrice(result),
+      imageUrl: extractImage(result),
+      rating: extractRating(result),
+      reviewCount: extractReviewCount(result),
       prime: result.is_prime || result.prime || false,
       brand: result.brand || '',
     };
 
-    console.log('[SerpAPI] Parsed product:', product.title?.substring(0, 40), 'ASIN:', product.asin, 'Price:', product.price, 'Image:', !!product.imageUrl);
+    console.log('[SerpAPI] Final product:', {
+      asin: product.asin,
+      price: product.price,
+      hasImage: !!product.imageUrl,
+      rating: product.rating
+    });
 
-    IntelligenceCache.set(cacheKey, product, CACHE_TTL_MS);
+    if (product.asin && product.price !== '$XX.XX') {
+      IntelligenceCache.set(cacheKey, product, CACHE_TTL_MS);
+    }
+
     return product;
 
   } catch (error: any) {
     console.error('[searchAmazonProduct] Error:', error.message);
     return {};
   }
+};
+
+const extractProductPrice = (result: any): string => {
+  const priceFields = [
+    result.buybox_winner?.price?.raw,
+    result.buybox_winner?.price?.value ? `$${result.buybox_winner.price.value}` : null,
+    result.price?.raw,
+    result.price?.current,
+    result.price?.value ? `$${result.price.value}` : null,
+    typeof result.price === 'string' && result.price.includes('$') ? result.price : null,
+    result.pricing?.[0]?.price?.raw,
+    result.price_string,
+    result.typical_price?.raw,
+  ];
+
+  for (const field of priceFields) {
+    if (field && typeof field === 'string' && field.includes('$')) {
+      console.log('[SerpAPI] Found price:', field);
+      return field;
+    }
+  }
+
+  return '$XX.XX';
+};
+
+const extractProductImage = (result: any): string => {
+  const imageFields = [
+    result.main_image?.link,
+    typeof result.main_image === 'string' ? result.main_image : null,
+    result.images?.[0]?.link,
+    result.images?.[0]?.url,
+    result.images?.[0]?.large,
+    result.images?.[0]?.medium,
+    typeof result.images?.[0] === 'string' ? result.images[0] : null,
+    result.thumbnail,
+    result.image,
+    result.media?.images?.[0]?.link,
+    typeof result.media?.images?.[0] === 'string' ? result.media.images[0] : null,
+  ];
+
+  for (const field of imageFields) {
+    if (field && typeof field === 'string' && field.startsWith('http')) {
+      console.log('[SerpAPI] Found image:', field.substring(0, 60));
+      return upgradeAmazonImageToHighRes(field);
+    }
+  }
+
+  return '';
 };
 
 /**
@@ -2380,10 +2511,6 @@ export const fetchProductByASIN = async (
     return cached;
   }
 
-  if (cached && !cached.imageUrl) {
-    console.log('[SerpAPI] Cache hit but missing image, refetching:', asin);
-  }
-
   console.log('[SerpAPI] Fetching product by ASIN:', asin);
 
   try {
@@ -2393,112 +2520,30 @@ export const fetchProductByASIN = async (
       apiKey: cleanKey,
     });
 
-    console.log('[fetchProductByASIN] Raw response keys:', Object.keys(data));
+    console.log('[fetchProductByASIN] Response keys:', Object.keys(data));
 
     const result = data.product_results || data.product_result;
 
     if (!result) {
-      console.error('[fetchProductByASIN] No product_results in response. Response keys:', Object.keys(data));
-
-      // Check if there's an error in the response
       if (data.error) {
         throw new Error(data.error);
       }
-
       throw new Error('Product not found or invalid ASIN');
     }
 
     console.log('[SerpAPI] Found product:', result.title?.substring(0, 50));
-    console.log('[SerpAPI] Product result keys:', Object.keys(result));
-    console.log('[SerpAPI] Price fields:', {
-      price: result.price,
-      buybox_winner: result.buybox_winner?.price,
-      pricing: result.pricing,
-      price_string: result.price_string
-    });
 
-    let price = '$XX.XX';
-    if (result.buybox_winner?.price?.raw) {
-      price = result.buybox_winner.price.raw;
-      console.log('[SerpAPI] Using buybox_winner.price.raw:', price);
-    } else if (result.buybox_winner?.price?.value) {
-      price = `$${result.buybox_winner.price.value}`;
-      console.log('[SerpAPI] Using buybox_winner.price.value:', price);
-    } else if (result.price?.raw) {
-      price = result.price.raw;
-      console.log('[SerpAPI] Using price.raw:', price);
-    } else if (result.price?.current) {
-      price = result.price.current;
-      console.log('[SerpAPI] Using price.current:', price);
-    } else if (result.price?.value) {
-      price = `$${result.price.value}`;
-      console.log('[SerpAPI] Using price.value:', price);
-    } else if (typeof result.price === 'string' && result.price.includes('$')) {
-      price = result.price;
-      console.log('[SerpAPI] Using price as string:', price);
-    } else if (result.pricing?.[0]?.price?.raw) {
-      price = result.pricing[0].price.raw;
-      console.log('[SerpAPI] Using pricing[0].price.raw:', price);
-    } else if (result.price_string) {
-      price = result.price_string;
-      console.log('[SerpAPI] Using price_string:', price);
-    }
-
-    let imageUrl = '';
-
-    // Try multiple image sources in priority order
-    if (result.main_image?.link) {
-      imageUrl = result.main_image.link;
-      console.log('[SerpAPI] Using main_image.link');
-    } else if (typeof result.main_image === 'string' && result.main_image.startsWith('http')) {
-      imageUrl = result.main_image;
-      console.log('[SerpAPI] Using main_image as string');
-    } else if (result.images && Array.isArray(result.images) && result.images.length > 0) {
-      const firstImg = result.images[0];
-      if (typeof firstImg === 'string') {
-        imageUrl = firstImg;
-        console.log('[SerpAPI] Using images[0] as string');
-      } else if (firstImg?.link) {
-        imageUrl = firstImg.link;
-        console.log('[SerpAPI] Using images[0].link');
-      } else if (firstImg?.url) {
-        imageUrl = firstImg.url;
-        console.log('[SerpAPI] Using images[0].url');
-      } else if (firstImg?.large || firstImg?.medium || firstImg?.small) {
-        imageUrl = firstImg.large || firstImg.medium || firstImg.small;
-        console.log('[SerpAPI] Using images[0] size variant');
-      }
-    } else if (result.thumbnail && result.thumbnail.startsWith('http')) {
-      imageUrl = result.thumbnail;
-      console.log('[SerpAPI] Using thumbnail');
-    } else if (result.image && result.image.startsWith('http')) {
-      imageUrl = result.image;
-      console.log('[SerpAPI] Using image field');
-    } else if (result.media?.images?.[0]) {
-      const mediaImg = result.media.images[0];
-      imageUrl = typeof mediaImg === 'string' ? mediaImg : (mediaImg?.link || mediaImg?.url || '');
-      console.log('[SerpAPI] Using media.images[0]');
-    }
-
-    console.log('[SerpAPI] Image extraction result - Raw URL:', imageUrl);
-    console.log('[SerpAPI] Available image fields:', {
-      main_image: !!result.main_image,
-      images_length: result.images?.length || 0,
-      thumbnail: !!result.thumbnail,
-      image: !!result.image,
-      media_images: result.media?.images?.length || 0
-    });
-
-    const highResImageUrl = upgradeAmazonImageToHighRes(imageUrl);
+    const price = extractProductPrice(result);
+    const imageUrl = extractProductImage(result);
 
     const product: ProductDetails = {
       id: `prod-${asin}-${Date.now()}`,
       asin,
       title: result.title || 'Unknown Product',
-      price: price,
-      imageUrl: highResImageUrl,
+      price,
+      imageUrl,
       rating: parseFloat(result.rating) || 4.5,
-      reviewCount: parseInt(String(result.reviews_total || result.ratings_total || '0').replace(/[^0-9]/g, '')) || 0,
+      reviewCount: extractReviewCount(result),
       prime: result.is_prime || result.buybox_winner?.is_prime || false,
       brand: result.brand || '',
       category: result.categories_flat || result.category?.[0]?.name || 'General',
@@ -2510,9 +2555,17 @@ export const fetchProductByASIN = async (
       deploymentMode: 'ELITE_BENTO',
     };
 
-    console.log('[SerpAPI] Parsed product:', product.title?.substring(0, 40), 'Price:', product.price, 'Image:', product.imageUrl?.substring(0, 50));
+    console.log('[SerpAPI] Final product:', {
+      asin: product.asin,
+      title: product.title?.substring(0, 40),
+      price: product.price,
+      hasImage: !!product.imageUrl
+    });
 
-    IntelligenceCache.setProduct(asin, product);
+    if (product.price !== '$XX.XX' && product.imageUrl) {
+      IntelligenceCache.setProduct(asin, product);
+    }
+
     return product;
 
   } catch (error: any) {
