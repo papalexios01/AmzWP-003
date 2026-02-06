@@ -2824,20 +2824,29 @@ export const fetchProductByASIN = async (
       }));
     }
 
+    const partialProduct = {
+      title: result.title || 'Unknown Product',
+      rating: parseFloat(result.rating) || 4.5,
+      reviewCount: extractReviewCount(result),
+      price,
+      prime: result.is_prime || result.buybox_winner?.is_prime || false,
+      brand: result.brand || '',
+    };
+
     const product: ProductDetails = {
       id: `prod-${asin}-${Date.now()}`,
       asin,
-      title: result.title || 'Unknown Product',
+      title: partialProduct.title,
       price,
       imageUrl,
-      rating: parseFloat(result.rating) || 4.5,
-      reviewCount: extractReviewCount(result),
-      prime: result.is_prime || result.buybox_winner?.is_prime || false,
-      brand: result.brand || '',
+      rating: partialProduct.rating,
+      reviewCount: partialProduct.reviewCount,
+      prime: partialProduct.prime,
+      brand: partialProduct.brand,
       category: result.categories_flat || result.category?.[0]?.name || 'General',
-      verdict: generateDefaultVerdict(result.title || 'This product'),
-      evidenceClaims: result.feature_bullets?.slice(0, 4) || result.about_item?.slice(0, 4) || generateDefaultClaims(),
-      faqs: generateDefaultFaqs(result.title || 'This product'),
+      verdict: buildVerdictFromApiData(result, partialProduct),
+      evidenceClaims: buildClaimsFromApiData(result, partialProduct.title),
+      faqs: buildFaqsFromApiData(result, partialProduct),
       specs: result.specifications_flat || {},
       insertionIndex: 1,
       deploymentMode: 'ELITE_BENTO',
@@ -3231,6 +3240,61 @@ const generateDefaultClaims = (): string[] => {
   return PRODUCT_CATEGORIES.generic.benefits;
 };
 
+const buildVerdictFromApiData = (result: any, product: { title: string; rating: number; reviewCount: number; price: string; prime: boolean; brand: string }): string => {
+  const rating = product.rating?.toFixed(1) || '4.5';
+  const reviews = (product.reviewCount || 0).toLocaleString();
+  const desc = result.description || result.product_information?.['Product Description'] || '';
+  if (desc && desc.length > 30) {
+    const cleaned = desc.replace(/<[^>]+>/g, '').trim();
+    const firstSentence = cleaned.split(/[.!?]/)[0]?.trim();
+    if (firstSentence && firstSentence.length > 20) {
+      return `${firstSentence}. Rated ${rating}/5 by ${reviews} verified buyers${product.prime ? ' with Prime delivery available' : ''}.`;
+    }
+  }
+  const category = detectProductCategory(product.title, product.brand);
+  const template = PRODUCT_CATEGORIES[category]?.verdictTemplate || PRODUCT_CATEGORIES.generic.verdictTemplate;
+  return template.replace('{rating}', rating).replace('{reviews}', reviews).replace('{prime}', product.prime ? 'Prime' : 'standard');
+};
+
+const buildClaimsFromApiData = (result: any, fallbackTitle: string): string[] => {
+  const bullets = result.feature_bullets || result.about_item || result.feature_bullets_flat || [];
+  if (Array.isArray(bullets) && bullets.length > 0) {
+    return bullets
+      .slice(0, 5)
+      .map((b: string) => {
+        const clean = b.replace(/<[^>]+>/g, '').trim();
+        return clean.length > 120 ? clean.substring(0, 117) + '...' : clean;
+      })
+      .filter((b: string) => b.length > 10);
+  }
+  const category = detectProductCategory(fallbackTitle, '');
+  return PRODUCT_CATEGORIES[category]?.benefits || PRODUCT_CATEGORIES.generic.benefits;
+};
+
+const buildFaqsFromApiData = (result: any, product: { title: string; price: string; prime: boolean; brand: string }): FAQItem[] => {
+  const shortTitle = product.title.split(' ').slice(0, 4).join(' ');
+  const faqs: FAQItem[] = [];
+
+  faqs.push({
+    question: `Is the ${shortTitle} worth buying?`,
+    answer: `With ${result.rating ? result.rating + '/5 stars' : 'strong ratings'} from ${((result.reviews_total || result.ratings_total || 0)).toLocaleString()} verified customers, the ${shortTitle} is a well-reviewed choice in its category. ${product.prime ? 'It qualifies for Prime shipping with free returns.' : ''}`,
+  });
+
+  if (result.feature_bullets?.length > 0) {
+    faqs.push({
+      question: `What are the main features of the ${shortTitle}?`,
+      answer: `Key features include: ${result.feature_bullets.slice(0, 3).map((b: string) => b.replace(/<[^>]+>/g, '').trim().split('.')[0]).join('; ')}.`,
+    });
+  }
+
+  faqs.push({
+    question: 'What is the return policy?',
+    answer: `Amazon offers easy returns within 30 days of purchase. ${product.prime ? 'Prime members get free return shipping.' : 'Return shipping costs may apply.'}`,
+  });
+
+  return faqs;
+};
+
 /**
  * Generate Tactical Link style product box (HELPER - NOT EXPORTED)
  */
@@ -3400,19 +3464,21 @@ export const generateComparisonTableHtml = (
 
   if (tableProducts.length < 2) return '';
 
-  const specRows = (data.specs || ['Rating', 'Reviews', 'Prime']).map((spec, idx) => {
+  const colWidth = Math.floor(100 / tableProducts.length);
+
+  const customSpecs = (data.specs || []).filter(
+    s => !['rating', 'reviews', 'prime', 'price'].includes(s.toLowerCase())
+  );
+
+  const specRows = customSpecs.map((spec, idx) => {
     return `
       <tr style="background:${idx % 2 === 0 ? '#f8fafc' : '#fff'};">
         ${tableProducts.map(p => {
-          let value = p.specs?.[spec] || '';
-          if (spec.toLowerCase() === 'rating') value = `${p.rating}/5 ★`;
-          if (spec.toLowerCase() === 'reviews') value = `${(p.reviewCount || 0).toLocaleString()} reviews`;
-          if (spec.toLowerCase() === 'prime') value = p.prime ? '✓ Yes' : '✗ No';
-          
+          const value = p.specs?.[spec] || '-';
           return `
-            <td style="padding:1rem;text-align:center;border-right:1px solid #e2e8f0;">
-              <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:4px;">${spec}</div>
-              <div style="font-size:14px;font-weight:600;color:#0f172a;">${value || '-'}</div>
+            <td style="padding:14px 16px;text-align:center;border-right:1px solid #f1f5f9;width:${colWidth}%;">
+              <div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">${spec}</div>
+              <div style="font-size:13px;font-weight:600;color:#1e293b;">${value}</div>
             </td>
           `;
         }).join('')}
@@ -3420,35 +3486,59 @@ export const generateComparisonTableHtml = (
     `;
   }).join('');
 
+  const shippingRow = tableProducts.some(p => p.prime) ? `
+      <tr style="background:#f8fafc;">
+        ${tableProducts.map(p => `
+          <td style="padding:14px 16px;text-align:center;border-right:1px solid #f1f5f9;width:${colWidth}%;">
+            <div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Shipping</div>
+            <div style="font-size:13px;font-weight:600;color:${p.prime ? '#059669' : '#94a3b8'};">${p.prime ? '&#9889; Prime' : 'Standard'}</div>
+          </td>
+        `).join('')}
+      </tr>
+  ` : '';
+
   return `
 <!-- AmzWP Comparison Table -->
-<div style="max-width:1100px;margin:3rem auto;background:#fff;border-radius:2rem;box-shadow:0 25px 80px rgba(0,0,0,0.1);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  
-  <div style="background:linear-gradient(135deg,#1e293b,#334155);padding:1.5rem 2rem;text-align:center;">
-    <h3 style="margin:0;color:#fff;font-size:1.1rem;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;">${data.title}</h3>
+<div style="max-width:1100px;margin:3rem auto;background:#fff;border-radius:20px;box-shadow:0 4px 24px rgba(0,0,0,0.06),0 1px 2px rgba(0,0,0,0.04);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;border:1px solid #e2e8f0;">
+
+  <div style="background:linear-gradient(135deg,#0f172a,#1e293b);padding:20px 28px;display:flex;align-items:center;justify-content:space-between;">
+    <div>
+      <h3 style="margin:0;color:#fff;font-size:1.1rem;font-weight:800;letter-spacing:-0.01em;">${data.title}</h3>
+      <p style="margin:4px 0 0;color:#64748b;font-size:12px;">${tableProducts.length} products compared</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span style="width:6px;height:6px;border-radius:50%;background:#34d399;display:inline-block;"></span>
+      <span style="color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;">Live Prices</span>
+    </div>
   </div>
-  
+
   <div style="overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;min-width:600px;">
       <tbody>
-        <!-- Product Row -->
         <tr>
           ${tableProducts.map((p, idx) => `
-            <td style="padding:2rem;text-align:center;background:${idx === 0 ? 'linear-gradient(180deg,#eff6ff,#fff)' : '#fff'};border-right:1px solid #e2e8f0;position:relative;">
-              ${idx === 0 ? '<div style="position:absolute;top:8px;left:50%;transform:translateX(-50%);background:#3b82f6;color:#fff;padding:4px 12px;border-radius:1rem;font-size:9px;font-weight:700;text-transform:uppercase;">Top Pick</div>' : ''}
-              <img src="${p.imageUrl}" alt="${p.title}" style="max-width:150px;max-height:150px;object-fit:contain;margin-bottom:1rem;">
-              <h4 style="margin:0 0 8px;font-size:14px;font-weight:700;color:#0f172a;line-height:1.3;">${truncateString(p.title, 50)}</h4>
-              <div style="color:#f59e0b;margin-bottom:8px;font-size:12px;">${'★'.repeat(Math.round(p.rating || 4.5))}</div>
-              <div style="font-size:1.5rem;font-weight:900;color:#0f172a;margin-bottom:1rem;">${p.price}</div>
-              <a href="https://www.amazon.com/dp/${p.asin}?tag=${tag}" target="_blank" rel="nofollow sponsored noopener" style="display:inline-block;padding:10px 20px;background:#1e293b;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:11px;text-transform:uppercase;">Check Price</a>
+            <td style="padding:28px 20px;text-align:center;background:${idx === 0 ? '#f0f9ff' : '#fff'};border-right:1px solid #f1f5f9;position:relative;vertical-align:top;width:${colWidth}%;">
+              ${idx === 0 ? '<div style="position:absolute;top:0;left:50%;transform:translateX(-50%);background:#2563eb;color:#fff;padding:5px 16px;border-radius:0 0 10px 10px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;box-shadow:0 4px 12px rgba(37,99,235,0.3);">&#9733; Top Pick</div>' : ''}
+              <div style="height:140px;display:flex;align-items:center;justify-content:center;margin-bottom:16px;${idx === 0 ? 'margin-top:12px;' : ''}">
+                <img src="${p.imageUrl}" alt="${p.title}" style="max-width:130px;max-height:130px;object-fit:contain;">
+              </div>
+              <h4 style="margin:0 0 10px;font-size:14px;font-weight:700;color:#0f172a;line-height:1.4;min-height:40px;">${truncateString(p.title, 55)}</h4>
+              <div style="color:#f59e0b;margin-bottom:4px;font-size:13px;letter-spacing:1px;">${'&#9733;'.repeat(Math.round(p.rating || 4.5))}</div>
+              <div style="font-size:11px;color:#94a3b8;margin-bottom:12px;">${p.rating?.toFixed(1) || '4.5'}/5 &middot; ${(p.reviewCount || 0).toLocaleString()} ratings</div>
+              <div style="font-size:28px;font-weight:900;color:#0f172a;margin-bottom:16px;letter-spacing:-0.02em;">${p.price}</div>
+              <a href="https://www.amazon.com/dp/${p.asin}?tag=${tag}" target="_blank" rel="nofollow sponsored noopener" style="display:inline-block;width:90%;padding:12px 20px;background:${idx === 0 ? '#2563eb' : '#0f172a'};color:#fff;text-decoration:none;border-radius:10px;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;box-shadow:0 4px 12px ${idx === 0 ? 'rgba(37,99,235,0.3)' : 'rgba(0,0,0,0.15)'};">Check Price &#8599;</a>
             </td>
           `).join('')}
         </tr>
-        
-        <!-- Spec Rows -->
+
         ${specRows}
+        ${shippingRow}
       </tbody>
     </table>
+  </div>
+
+  <div style="background:#f8fafc;padding:10px 28px;border-top:1px solid #f1f5f9;text-align:center;">
+    <p style="margin:0;color:#94a3b8;font-size:10px;">Prices and availability are accurate as of the date/time indicated and are subject to change.</p>
   </div>
 </div>
 <!-- /AmzWP Comparison Table -->`;

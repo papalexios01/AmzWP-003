@@ -421,6 +421,60 @@ export const SitemapScanner: React.FC<SitemapScannerProps> = ({
         </div>
       )}
 
+      {/* ========== ACTION GUIDANCE PANEL ========== */}
+      {posts.length > 0 && (stats.critical > 0 || stats.high > 0) && filterTab === 'all' && (
+        <div className="flex-shrink-0 bg-dark-900/60 border-b border-dark-800">
+          <div className="max-w-6xl mx-auto px-6 md:px-8 py-5">
+            <div className="bg-gradient-to-r from-emerald-500/10 via-dark-800/50 to-blue-500/10 border border-dark-700 rounded-2xl p-5">
+              <div className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <i className="fa-solid fa-lightbulb text-emerald-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-white font-bold text-sm mb-2">Action Plan: Monetize Your Content</h4>
+                  <div className="space-y-2">
+                    {stats.critical > 0 && (
+                      <div className="flex items-start gap-2">
+                        <span className="w-5 h-5 rounded-md bg-red-500/20 text-red-400 flex items-center justify-center flex-shrink-0 text-[10px] font-black mt-0.5">1</span>
+                        <p className="text-gray-400 text-xs leading-relaxed">
+                          <span className="text-red-400 font-bold">{stats.critical} critical posts</span> are product reviews, comparisons, or "best of" lists with
+                          <span className="text-white font-semibold"> zero affiliate links</span>. Click on each to scan and add product boxes.
+                        </p>
+                      </div>
+                    )}
+                    {stats.high > 0 && (
+                      <div className="flex items-start gap-2">
+                        <span className="w-5 h-5 rounded-md bg-orange-500/20 text-orange-400 flex items-center justify-center flex-shrink-0 text-[10px] font-black mt-0.5">{stats.critical > 0 ? '2' : '1'}</span>
+                        <p className="text-gray-400 text-xs leading-relaxed">
+                          <span className="text-orange-400 font-bold">{stats.high} high-priority posts</span> mention specific brands or products. Open each,
+                          run <span className="text-white font-semibold">Deep Scan</span>, then <span className="text-white font-semibold">Auto-Deploy All</span> to place product boxes.
+                        </p>
+                      </div>
+                    )}
+                    {stats.medium > 0 && (
+                      <div className="flex items-start gap-2">
+                        <span className="w-5 h-5 rounded-md bg-yellow-500/20 text-yellow-400 flex items-center justify-center flex-shrink-0 text-[10px] font-black mt-0.5">{(stats.critical > 0 ? 1 : 0) + (stats.high > 0 ? 1 : 0) + 1}</span>
+                        <p className="text-gray-400 text-xs leading-relaxed">
+                          <span className="text-yellow-400 font-bold">{stats.medium} medium posts</span> are guides or tutorials that could include relevant product recommendations.
+                        </p>
+                      </div>
+                    )}
+                    <div className="flex items-start gap-2 pt-1">
+                      <span className="w-5 h-5 rounded-md bg-blue-500/20 text-blue-400 flex items-center justify-center flex-shrink-0 text-[10px] font-black mt-0.5"><i className="fa-solid fa-arrow-right text-[8px]" /></span>
+                      <p className="text-gray-400 text-xs leading-relaxed">
+                        <span className="text-blue-400 font-bold">Quick workflow:</span> Filter by
+                        <button onClick={() => setFilterTab('critical')} className="text-red-400 font-bold underline underline-offset-2 mx-1 hover:text-red-300">Critical</button>
+                        &#8594; Open post &#8594; Scan &#8594; Auto-Deploy All &#8594; Deploy Live
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ========== POST LIST ========== */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-6xl mx-auto p-6 md:p-8">
@@ -453,7 +507,7 @@ export const SitemapScanner: React.FC<SitemapScannerProps> = ({
                     type="text"
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
-                    placeholder="Search posts..."
+                    placeholder="Search posts by title or URL..."
                     className="w-full bg-dark-800 border border-dark-700 rounded-xl pl-12 pr-4 py-3 text-white placeholder-gray-500 focus:border-brand-500 outline-none"
                   />
                 </div>
@@ -473,41 +527,71 @@ export const SitemapScanner: React.FC<SitemapScannerProps> = ({
                     <div className="flex items-center gap-4">
                       {/* Priority Badge */}
                       <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                        post.monetizationStatus === 'monetized' 
-                          ? 'bg-purple-500/20 text-purple-400'
+                        post.monetizationStatus === 'monetized'
+                          ? 'bg-emerald-500/20 text-emerald-400'
                           : post.priority === 'critical'
                           ? 'bg-red-500/20 text-red-400'
                           : post.priority === 'high'
                           ? 'bg-orange-500/20 text-orange-400'
                           : post.priority === 'medium'
                           ? 'bg-yellow-500/20 text-yellow-400'
-                          : 'bg-green-500/20 text-green-400'
+                          : 'bg-slate-500/20 text-slate-400'
                       }`}>
                         <i className={`fa-solid ${
-                          post.monetizationStatus === 'monetized' ? 'fa-check' : 'fa-dollar-sign'
+                          post.monetizationStatus === 'monetized' ? 'fa-check-double' :
+                          post.priority === 'critical' ? 'fa-fire' :
+                          post.priority === 'high' ? 'fa-arrow-trend-up' :
+                          'fa-dollar-sign'
                         } text-lg`} />
                       </div>
 
                       {/* Content */}
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-white group-hover:text-brand-400 transition-colors truncate">
-                          {post.title}
-                        </h3>
-                        <a
-                          href={post.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-xs text-gray-500 hover:text-brand-400 truncate mt-1 block underline decoration-dotted underline-offset-2"
-                        >
-                          {post.url}
-                        </a>
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <h3 className="font-bold text-white group-hover:text-brand-400 transition-colors truncate">
+                            {post.title}
+                          </h3>
+                        </div>
+                        <div className="flex items-center gap-3 mt-1">
+                          <a
+                            href={post.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs text-gray-500 hover:text-brand-400 truncate underline decoration-dotted underline-offset-2"
+                          >
+                            {post.url}
+                          </a>
+                          {post.monetizationStatus === 'opportunity' && post.priority !== 'low' && (
+                            <span className="hidden md:inline-flex text-[9px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded whitespace-nowrap">
+                              Needs product boxes
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Type Badge */}
-                      <div className="hidden md:block px-3 py-1 bg-dark-700 rounded-lg text-xs font-bold text-gray-400 uppercase">
+                      <div className={`hidden md:block px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${
+                        post.postType === 'review' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                        post.postType === 'listicle' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                        post.postType === 'comparison' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' :
+                        post.postType === 'how-to' ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20' :
+                        'bg-dark-700 text-gray-400'
+                      }`}>
                         {post.postType}
                       </div>
+
+                      {/* Priority Indicator */}
+                      {post.monetizationStatus === 'opportunity' && (
+                        <div className={`hidden md:block px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${
+                          post.priority === 'critical' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                          post.priority === 'high' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
+                          post.priority === 'medium' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
+                          'bg-dark-700 text-gray-500'
+                        }`}>
+                          {post.priority}
+                        </div>
+                      )}
 
                       {/* Arrow */}
                       <div className="text-gray-600 group-hover:text-brand-400 group-hover:translate-x-1 transition-all">

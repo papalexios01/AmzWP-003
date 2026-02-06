@@ -50,33 +50,29 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    console.log(`[SerpAPI Proxy] Making request for ${type}:`, query || asin);
+    console.log(`[SerpAPI Proxy] ${type} request for:`, query || asin);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     const response = await fetch(serpApiUrl, {
-      headers: {
-        "Accept": "application/json",
-      },
+      headers: { "Accept": "application/json" },
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[SerpAPI Proxy] API error: ${response.status}`, errorText);
+      console.error(`[SerpAPI Proxy] API error: ${response.status}`, errorText.substring(0, 200));
 
       let errorMessage = `SerpAPI returned ${response.status}`;
-      if (response.status === 401) {
-        errorMessage = 'Invalid SerpAPI key';
-      } else if (response.status === 429) {
-        errorMessage = 'SerpAPI rate limit exceeded';
-      } else if (response.status === 400) {
-        errorMessage = 'Invalid request to SerpAPI';
-      }
+      if (response.status === 401) errorMessage = 'Invalid SerpAPI key';
+      else if (response.status === 429) errorMessage = 'SerpAPI rate limit exceeded';
+      else if (response.status === 400) errorMessage = 'Invalid request to SerpAPI';
 
       return new Response(
-        JSON.stringify({
-          error: errorMessage,
-          status: response.status,
-          details: errorText.substring(0, 200)
-        }),
+        JSON.stringify({ error: errorMessage, status: response.status }),
         {
           status: response.status,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -87,26 +83,18 @@ Deno.serve(async (req: Request) => {
     const data = await response.json();
 
     if (type === 'product') {
-      console.log(`[SerpAPI Proxy] Product response keys:`, Object.keys(data));
-      console.log(`[SerpAPI Proxy] Has product_results:`, !!data.product_results);
-      console.log(`[SerpAPI Proxy] Has product_result:`, !!data.product_result);
-      if (data.product_results) {
-        console.log(`[SerpAPI Proxy] Product title:`, data.product_results.title?.substring(0, 50));
-        console.log(`[SerpAPI Proxy] Image fields available:`, {
-          main_image: typeof data.product_results.main_image,
-          images: Array.isArray(data.product_results.images) ? data.product_results.images.length : 'none',
-          thumbnail: !!data.product_results.thumbnail,
-          image: !!data.product_results.image
-        });
-        if (data.product_results.main_image) {
-          console.log(`[SerpAPI Proxy] main_image content:`, typeof data.product_results.main_image === 'string' ? data.product_results.main_image.substring(0, 100) : Object.keys(data.product_results.main_image));
-        }
-        if (data.product_results.images?.[0]) {
-          console.log(`[SerpAPI Proxy] First image:`, typeof data.product_results.images[0] === 'string' ? data.product_results.images[0].substring(0, 100) : Object.keys(data.product_results.images[0]));
-        }
+      const pr = data.product_results || data.product_result;
+      if (pr) {
+        console.log(`[SerpAPI Proxy] Product: "${pr.title?.substring(0, 50)}"`);
+        console.log(`[SerpAPI Proxy] Image: ${pr.main_image ? 'YES' : 'NO'}, Images: ${pr.images?.length || 0}`);
+        console.log(`[SerpAPI Proxy] Price: ${pr.buybox_winner?.price?.raw || pr.price?.raw || 'N/A'}`);
+        console.log(`[SerpAPI Proxy] Rating: ${pr.rating || 'N/A'}, Reviews: ${pr.reviews_total || pr.ratings_total || 'N/A'}`);
+        console.log(`[SerpAPI Proxy] Bullets: ${pr.feature_bullets?.length || 0}, Specs: ${Object.keys(pr.specifications_flat || {}).length}`);
+      } else {
+        console.error(`[SerpAPI Proxy] No product data found. Keys: ${Object.keys(data).join(', ')}`);
       }
     } else {
-      console.log(`[SerpAPI Proxy] Success - got ${data.organic_results?.length || 0} results`);
+      console.log(`[SerpAPI Proxy] Search: ${data.organic_results?.length || 0} results`);
     }
 
     return new Response(
@@ -119,10 +107,11 @@ Deno.serve(async (req: Request) => {
 
   } catch (error: any) {
     console.error("[SerpAPI Proxy] Error:", error.message);
+    const isTimeout = error.name === 'AbortError';
     return new Response(
-      JSON.stringify({ error: error.message || "Internal server error" }),
+      JSON.stringify({ error: isTimeout ? "Request timed out - try again" : (error.message || "Internal server error") }),
       {
-        status: 500,
+        status: isTimeout ? 504 : 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );

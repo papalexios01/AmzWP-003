@@ -370,27 +370,54 @@ export const PostEditor: React.FC<PostEditorProps> = ({ post, config, onBack }) 
 
         let newNodes = [...editorNodes];
         let injectedCount = 0;
+        const MIN_GAP = 3;
 
-        // Sort by paragraph index to insert in order (prevents index shifting issues)
+        const getProductNodePositions = (nodes: EditorNode[]): Set<number> => {
+            const positions = new Set<number>();
+            nodes.forEach((n, i) => {
+                if (n.type === 'PRODUCT' || n.type === 'COMPARISON') {
+                    for (let g = Math.max(0, i - MIN_GAP); g <= Math.min(nodes.length - 1, i + MIN_GAP); g++) {
+                        positions.add(g);
+                    }
+                }
+            });
+            return positions;
+        };
+
         const sortedUnplaced = [...unplaced].sort((a, b) => {
             const aIdx = a.paragraphIndex ?? Infinity;
             const bIdx = b.paragraphIndex ?? Infinity;
-            return bIdx - aIdx; // Reverse order so we insert from bottom to top
+            if (aIdx !== bIdx) return bIdx - aIdx;
+            return (b.confidence ?? 0) - (a.confidence ?? 0);
         });
 
         sortedUnplaced.forEach(p => {
-            let bestIdx = 0;
+            const occupiedZones = getProductNodePositions(newNodes);
+            let bestIdx = -1;
             let maxScore = -1;
 
-            // PRECISION: If we have a paragraph index, try to use it directly
             if (typeof p.paragraphIndex === 'number' && p.paragraphIndex >= 0) {
-                // Find HTML blocks and map to paragraph indices
                 let htmlBlockCount = 0;
                 for (let i = 0; i < newNodes.length; i++) {
                     if (newNodes[i].type === 'HTML') {
                         if (htmlBlockCount === p.paragraphIndex) {
-                            bestIdx = i;
-                            maxScore = 10000; // Use paragraph index directly
+                            if (!occupiedZones.has(i)) {
+                                bestIdx = i;
+                                maxScore = 10000;
+                            } else {
+                                for (let offset = 1; offset <= 4; offset++) {
+                                    if (i + offset < newNodes.length && !occupiedZones.has(i + offset) && newNodes[i + offset]?.type === 'HTML') {
+                                        bestIdx = i + offset;
+                                        maxScore = 9000;
+                                        break;
+                                    }
+                                    if (i - offset >= 0 && !occupiedZones.has(i - offset) && newNodes[i - offset]?.type === 'HTML') {
+                                        bestIdx = i - offset;
+                                        maxScore = 9000;
+                                        break;
+                                    }
+                                }
+                            }
                             break;
                         }
                         htmlBlockCount++;
@@ -398,11 +425,13 @@ export const PostEditor: React.FC<PostEditorProps> = ({ post, config, onBack }) 
                 }
             }
 
-            // Fallback: Use content matching if paragraph index didn't work
-            if (maxScore < 10000) {
+            if (maxScore < 9000) {
                 newNodes.forEach((node, idx) => {
-                    if (node.type === 'HTML' && node.content) {
-                        const score = calculateRelevance(node.content, p);
+                    if (node.type === 'HTML' && node.content && !occupiedZones.has(idx)) {
+                        let score = calculateRelevance(node.content, p);
+                        const contentLen = node.content.replace(/<[^>]+>/g, '').trim().length;
+                        if (contentLen < 30) score -= 50;
+                        if (contentLen > 200) score += 15;
                         if (score > maxScore) {
                             maxScore = score;
                             bestIdx = idx;
@@ -411,16 +440,19 @@ export const PostEditor: React.FC<PostEditorProps> = ({ post, config, onBack }) 
                 });
             }
 
-            // Only inject if we found a reasonable match
-            if (maxScore > 0) {
-                const newNode: EditorNode = { id: `prod-node-${p.id}-${Date.now()}`, type: 'PRODUCT', productId: p.id };
+            if (bestIdx >= 0 && maxScore > 0) {
+                const newNode: EditorNode = { id: `prod-node-${p.id}-${Date.now()}-${injectedCount}`, type: 'PRODUCT', productId: p.id };
                 newNodes.splice(bestIdx + 1, 0, newNode);
                 injectedCount++;
             }
         });
 
         setEditorNodes(newNodes);
-        toast(`Precision Deploy: ${injectedCount} Assets Placed`, { style: { background: "#0ea5e9" } });
+        if (injectedCount === unplaced.length) {
+            toast(`All ${injectedCount} products placed`, { style: { background: "#0ea5e9" } });
+        } else {
+            toast(`${injectedCount}/${unplaced.length} products placed (${unplaced.length - injectedCount} need manual placement)`, { style: { background: "#0ea5e9" }, duration: 4000 });
+        }
     };
 
     // --- STANDARD OPERATIONS ---

@@ -216,8 +216,8 @@ export const PremiumProductBox: React.FC<PremiumProductBoxProps> = ({
            ═══════════════════════════════════════════════════════════════ */
 
         .amz-hyperbox-wrapper {
-          --accent-1: #6366f1;
-          --accent-2: #ec4899;
+          --accent-1: #2563eb;
+          --accent-2: #0ea5e9;
           --accent-3: #f59e0b;
           --dark: #0a0a0f;
           --glass: rgba(255, 255, 255, 0.03);
@@ -234,7 +234,7 @@ export const PremiumProductBox: React.FC<PremiumProductBoxProps> = ({
           position: absolute;
           inset: -50%;
           background: 
-            radial-gradient(ellipse at 20% 30%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+            radial-gradient(ellipse at 20% 30%, rgba(37, 99, 235, 0.15) 0%, transparent 50%),
             radial-gradient(ellipse at 80% 70%, rgba(236, 72, 153, 0.15) 0%, transparent 50%),
             radial-gradient(ellipse at 50% 50%, rgba(245, 158, 11, 0.1) 0%, transparent 50%);
           filter: blur(60px);
@@ -371,7 +371,7 @@ export const PremiumProductBox: React.FC<PremiumProductBoxProps> = ({
           font-size: 11px;
           font-weight: 800;
           letter-spacing: 2px;
-          background: linear-gradient(90deg, #fff, #a5b4fc);
+          background: linear-gradient(90deg, #fff, #93c5fd);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
         }
@@ -523,9 +523,9 @@ export const PremiumProductBox: React.FC<PremiumProductBoxProps> = ({
         }
 
         .pill-category {
-          background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2));
-          color: #a5b4fc;
-          border: 1px solid rgba(99, 102, 241, 0.3);
+          background: linear-gradient(135deg, rgba(37, 99, 235, 0.2), rgba(14, 165, 233, 0.2));
+          color: #93c5fd;
+          border: 1px solid rgba(37, 99, 235, 0.3);
         }
 
         .pill-prime {
@@ -569,8 +569,8 @@ export const PremiumProductBox: React.FC<PremiumProductBoxProps> = ({
 
         /* Verdict Box */
         .verdict-box {
-          background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.05));
-          border: 1px solid rgba(99, 102, 241, 0.2);
+          background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(14, 165, 233, 0.05));
+          border: 1px solid rgba(37, 99, 235, 0.2);
           border-radius: 20px;
           padding: 1.5rem;
         }
@@ -595,7 +595,7 @@ export const PremiumProductBox: React.FC<PremiumProductBoxProps> = ({
         .verdict-label {
           font-size: 12px;
           font-weight: 700;
-          color: #a5b4fc;
+          color: #93c5fd;
           text-transform: uppercase;
           letter-spacing: 1px;
         }
@@ -734,14 +734,14 @@ export const PremiumProductBox: React.FC<PremiumProductBoxProps> = ({
         .cta-bg {
           position: absolute;
           inset: 0;
-          background: linear-gradient(135deg, #6366f1, #ec4899);
+          background: linear-gradient(135deg, #2563eb, #0ea5e9);
           transition: opacity 0.3s;
         }
 
         .cta-glow {
           position: absolute;
           inset: -2px;
-          background: linear-gradient(135deg, #6366f1, #ec4899, #f59e0b, #6366f1);
+          background: linear-gradient(135deg, #2563eb, #0ea5e9, #f59e0b, #2563eb);
           background-size: 300% 300%;
           animation: ctaGlow 4s linear infinite;
           filter: blur(15px);
